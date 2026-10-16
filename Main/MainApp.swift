@@ -125,7 +125,7 @@ struct SlotIcon: View {
             }
             .modifier(IconGlass())
             .overlay(IconContour()
-                .strokeBorder(LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.05), .white.opacity(0.25)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.7))
+                .stroke(LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.05), .white.opacity(0.25)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.7))
         }.aspectRatio(1, contentMode: .fit).foregroundStyle(.white)
             .shadow(color: .black.opacity(0.14), radius: 2, y: 2)
     }
