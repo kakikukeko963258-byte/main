@@ -1,0 +1,39 @@
+name: Build public IPA
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: public-ipa
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Build iPhone app
+        run: |
+          set -euo pipefail
+          xcodebuild -project main.xcodeproj -scheme main -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+      - name: Package AltStore IPA
+        run: |
+          mkdir -p dist/Payload
+          cp -R build/Build/Products/Release-iphoneos/main.app dist/Payload/
+          cd dist
+          /usr/bin/zip -qr main.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: main-ipa
+          path: dist/main.ipa
+      - name: Publish downloadable build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="build-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" dist/main.ipa --title "main build ${GITHUB_RUN_NUMBER}" --notes "4 columns × 8 rows. Install main.ipa with AltStore Classic (re-signing required)." --target "$GITHUB_SHA"
