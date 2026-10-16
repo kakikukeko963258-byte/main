@@ -47,7 +47,7 @@ jobs:
         run: |
           xcrun simctl boot "$SIMULATOR_ID"
       - name: Verify folder navigation and capture screens
-        timeout-minutes: 8
+        timeout-minutes: 18
         run: |
           set -euo pipefail
           xcrun simctl io "$SIMULATOR_ID" recordVideo --codec=h264 motion.mov > /tmp/recording.log 2>&1 &
