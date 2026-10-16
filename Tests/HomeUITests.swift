@@ -28,6 +28,15 @@ final class HomeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["ページ 32"].waitForExistence(timeout: 5))
         app.buttons["ホームへ戻る"].tap()
         XCTAssertTrue(app.buttons["アプリ 1"].waitForExistence(timeout: 5))
+        let moveSource = app.buttons["アプリ 13"]
+        let moveTarget = app.buttons["アプリ 17"]
+        let targetY = moveTarget.frame.minY
+        moveSource.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.38))
+            .press(forDuration: 0.45, thenDragTo: moveTarget.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.38)))
+        XCTAssertTrue(app.buttons["完了"].waitForExistence(timeout: 5))
+        app.buttons["完了"].tap()
+        XCTAssertEqual(app.buttons["アプリ 13"].frame.minY, targetY, accuracy: 3)
+        capture("04-moved-icon")
         app.buttons["ナビゲーション、5個のアプリ"].tap()
         app.buttons["アプリ 3"].press(forDuration: 0.5)
         for slot in 3...6 {
@@ -36,7 +45,7 @@ final class HomeUITests: XCTestCase {
             remove.tap()
         }
         XCTAssertTrue(app.buttons["アプリ 7"].waitForExistence(timeout: 5))
-        capture("04-single-app-name")
+        capture("05-single-app-name")
         app.terminate()
         app.launch()
         XCTAssertTrue(app.buttons["アプリ 7"].waitForExistence(timeout: 10))
