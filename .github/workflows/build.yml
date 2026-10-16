@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
@@ -37,3 +37,4 @@ jobs:
         run: |
           TAG="build-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" dist/main.ipa --title "main build ${GITHUB_RUN_NUMBER}" --notes "4 columns × 8 rows. Install main.ipa with AltStore Classic (re-signing required)." --target "$GITHUB_SHA"
+
