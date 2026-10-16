@@ -72,6 +72,15 @@ final class HomeStore: ObservableObject {
         result.insert(item, at: min(targetIndex, result.count))
         items = result
     }
+    func moveSlot(_ slot: Int, in folder: String, to target: Int) {
+        guard slot != target, let index = items.firstIndex(where: { $0.id == folder }),
+              let from = items[index].slots.firstIndex(of: slot),
+              let to = items[index].slots.firstIndex(of: target) else { return }
+        var result = items
+        result[index].slots.remove(at: from)
+        result[index].slots.insert(slot, at: min(to, result[index].slots.count))
+        items = result
+    }
 }
 
 struct GlassSurface: ViewModifier {
@@ -136,6 +145,7 @@ struct IconPressStyle: ButtonStyle {
 struct HomeView: View {
     @StateObject private var store = HomeStore()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @State private var folderID: String?
     @State private var folderProgress: CGFloat = 0
     @State private var folderSource = CGRect.zero
@@ -228,6 +238,15 @@ struct HomeView: View {
                 .onChange(of: geometry.size) { screenSize = $0 }
         }
         .ignoresSafeArea()
+        .onChange(of: scenePhase) { phase in
+            if phase != .active {
+                draggedItem = nil
+                folderDraggedSlot = nil
+                hoveredID = nil
+                edgeDirection = 0
+                pagePan = 0
+            }
+        }
         .sheet(isPresented: $showSearch) { searchSheet }
         .task {
             for slot in 1...32 { _ = IconArtwork.image(slot) }
@@ -268,7 +287,18 @@ FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
                         let point = CGPoint(x: origin.midX + translation.width, y: origin.midY + translation.height)
                         if !metrics.folderRect.insetBy(dx: -12, dy: -12).contains(point) {
                             store.extract(slot, from: id)
+                            if let extracted = store.items.first(where: { $0.slots == [slot] }),
+                               let target = store.items.enumerated().first(where: { index, candidate in
+                                   index / 24 == page && candidate.id != extracted.id && metrics.iconRect(index % 24).contains(point)
+                               })?.element {
+                                store.move(source: extracted.id, target: target.id)
+                            }
                             closeFolder()
+                        } else if let sourceIndex = item.slots.firstIndex(of: slot),
+                                  let target = item.slots.enumerated().first(where: { index, candidate in
+                                      index / 9 == sourceIndex / 9 && candidate != slot && metrics.folderIconRect(index % 9).contains(point)
+                                  })?.element {
+                            withAnimation(.easeInOut(duration: 0.18)) { store.moveSlot(slot, in: id, to: target) }
                         }
                         folderDraggedSlot = nil
                         draggedItem = nil
