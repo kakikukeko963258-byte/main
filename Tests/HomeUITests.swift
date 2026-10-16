@@ -6,6 +6,13 @@ final class HomeUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         XCTAssertTrue(app.buttons["アプリ 1"].waitForExistence(timeout: 10))
+        let screen = app.frame
+        let first = app.buttons["アプリ 1"].frame
+        XCTAssertEqual(first.midX / screen.width, 145.5 / 947, accuracy: 0.002)
+        XCTAssertEqual(first.minY / screen.height, 163.0 / 2048, accuracy: 0.002)
+        let last = app.buttons["アプリ 32"].frame
+        XCTAssertEqual(last.midX / screen.width, 801.0 / 947, accuracy: 0.002)
+        XCTAssertEqual(last.minY / screen.height, 1353.0 / 2048, accuracy: 0.002)
         capture("01-home")
         app.buttons["ナビゲーション、5個のアプリ"].tap()
         XCTAssertTrue(app.buttons["アプリ 3"].waitForExistence(timeout: 5))

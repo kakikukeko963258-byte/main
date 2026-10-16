@@ -32,16 +32,22 @@ jobs:
           name: main-ipa
           path: dist/main.ipa
       - name: Select simulator
+        timeout-minutes: 3
         run: |
-          xcrun simctl list devices available -j > /tmp/devices.json
           python3 - <<'PY'
-          import json, os
-          data = json.load(open('/tmp/devices.json'))
-          devices = [d for runtime, values in data['devices'].items() if 'iOS' in runtime for d in values if 'iPhone' in d['name']]
-          device = next((d for d in devices if 'iPhone 17 Pro' == d['name']), devices[0])
+          import json, os, subprocess
+          data = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'runtimes', '-j']))
+          runtimes = [r for r in data['runtimes'] if r.get('isAvailable') and 'iOS' in r['name']]
+          runtime = max(runtimes, key=lambda r: tuple(map(int, r['version'].split('.'))))
+          device = subprocess.check_output(['xcrun', 'simctl', 'create', 'main-reference-iPhone', 'com.apple.CoreSimulator.SimDeviceType.iPhone-13', runtime['identifier']], text=True).strip()
           with open(os.environ['GITHUB_ENV'], 'a') as f:
-              f.write('SIMULATOR_ID=' + device['udid'] + '\n')
+              f.write('SIMULATOR_ID=' + device + '\n')
           PY
+      - name: Boot reference-size iPhone
+        timeout-minutes: 4
+        run: |
+          xcrun simctl boot "$SIMULATOR_ID"
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b
       - name: Verify folder navigation and capture screens
         timeout-minutes: 8
         run: |

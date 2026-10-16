@@ -117,14 +117,14 @@ struct SlotIcon: View {
             let hues: [Double] = [0.58, 0.48, 0.35, 0.08, 0.66, 0.97, 0.12, 0.56]
             let hue = hues[(slot - 1) % hues.count]
             ZStack {
-                RoundedRectangle(cornerRadius: geo.size.width * 0.23, style: .continuous)
+                IconContour()
                     .fill(LinearGradient(colors: [Color(hue: hue, saturation: 0.64, brightness: 0.98),
                                                  Color(hue: hue, saturation: 0.88, brightness: 0.63)],
                                          startPoint: .topLeading, endPoint: .bottomTrailing)).opacity(0.62)
                 Text("\(slot)").font(.system(size: geo.size.width * 0.44, weight: .medium, design: .rounded))
             }
-            .homeGlass(geo.size.width * 0.23)
-            .overlay(RoundedRectangle(cornerRadius: geo.size.width * 0.23, style: .continuous)
+            .modifier(IconGlass())
+            .overlay(IconContour()
                 .strokeBorder(LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.05), .white.opacity(0.25)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.7))
         }.aspectRatio(1, contentMode: .fit).foregroundStyle(.white)
             .shadow(color: .black.opacity(0.14), radius: 2, y: 2)
@@ -141,7 +141,7 @@ struct FolderIcon: View {
                 }
             }.padding(geo.size.width * 0.14)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                .homeGlass(geo.size.width * 0.23)
+                .modifier(IconGlass())
         }.aspectRatio(1, contentMode: .fit)
     }
 }
@@ -149,18 +149,23 @@ struct FolderIcon: View {
 struct IconPressStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.scaleEffect(configuration.isPressed && !reduceMotion ? 0.89 : 1)
+        configuration.label.scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
             .brightness(configuration.isPressed ? -0.08 : 0)
-            .animation(.spring(response: 0.28, dampingFraction: 0.65), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
 struct HomeView: View {
     @StateObject private var store = HomeStore()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var namespace
     @State private var folderID: String?
+    @State private var folderProgress: CGFloat = 0
+    @State private var folderSource = CGRect.zero
     @State private var selectedSlot: Int?
+    @State private var appProgress: CGFloat = 0
+    @State private var appSource = CGRect.zero
+    @State private var screenSize = CGSize(width: 390, height: 844)
+    @State private var safeTop: CGFloat = 47
     @State private var page = 0
     @State private var showSearch = false
     @State private var query = ""
@@ -168,101 +173,58 @@ struct HomeView: View {
     @State private var wallpaper: UIImage?
     @State private var wallpaperError = false
     @State private var folderName = ""
-    @FocusState private var renaming: Bool
-    private var motion: Animation { reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.43, dampingFraction: 0.84) }
+    private var folderMotion: Animation { reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.42, dampingFraction: 0.88) }
+    private var appMotion: Animation { reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.45, dampingFraction: 0.90) }
     private var wallpaperURL: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("wallpaper.jpg") }
 
     var body: some View {
         GeometryReader { geometry in
-            let width = geometry.size.width
-            let fullHeight = geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom
-            let icon = width * 0.164
-            let label = width * 0.031
-            let pitch = min(fullHeight * 0.116, (geometry.size.height - 80) / 6)
-            let top = max(12, fullHeight * 0.079 - geometry.safeAreaInsets.top)
-            ZStack {
+            let metrics = HomeMetrics(size: geometry.size)
+            ZStack(alignment: .topLeading) {
                 Wallpaper(image: wallpaper)
-                VStack(spacing: 0) {
-                    TabView(selection: $page) {
-                        ForEach(0..<max(1, (store.items.count + 23) / 24), id: \.self) { index in
-                            VStack(spacing: 0) {
-                                ForEach(0..<6, id: \.self) { row in
-                                    HStack(alignment: .top, spacing: 0) {
-                                        ForEach(0..<4, id: \.self) { column in
-                                            let offset = index * 24 + row * 4 + column
-                                            if offset < store.items.count {
-                                                homeTile(store.items[offset], icon: icon, label: label)
-                                                    .frame(width: width * 0.231)
-                                            } else { Color.clear.frame(width: width * 0.231, height: icon) }
-                                        }
-                                    }.frame(height: pitch, alignment: .top)
-                                }
-                                Spacer(minLength: 0)
-                            }.padding(.top, top).tag(index)
-                        }
-                    }.tabViewStyle(.page(indexDisplayMode: .never))
-                    Button { showSearch = true } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .semibold))
-                            Text("検索").font(.system(size: 13, weight: .medium))
-                        }.padding(.horizontal, 14).padding(.vertical, 9).homeGlass(30)
-                    }.buttonStyle(IconPressStyle())
-                        .padding(.bottom, max(18, fullHeight * 0.12 - geometry.safeAreaInsets.bottom))
-                }
-                .scaleEffect(folderID == nil ? 1 : 0.94)
-                .blur(radius: folderID == nil ? 0 : 12)
-                .opacity(selectedSlot == nil ? 1 : 0)
-                .allowsHitTesting(folderID == nil && selectedSlot == nil)
-                .accessibilityHidden(folderID != nil || selectedSlot != nil)
-
+                    .blur(radius: reduceMotion ? 0 : 6 * folderProgress)
+                homePages(metrics)
+                    .scaleEffect(reduceMotion ? 1 : 1 + 0.07 * folderProgress + 0.035 * appProgress)
+                    .blur(radius: 10 * folderProgress + 7 * appProgress)
+                    .opacity(1 - 0.12 * folderProgress)
+                    .allowsHitTesting(folderID == nil && selectedSlot == nil)
+                    .accessibilityHidden(folderID != nil || selectedSlot != nil)
                 if let id = folderID, let item = store.items.first(where: { $0.id == id }) {
-                    Color.black.opacity(0.12).ignoresSafeArea()
-                        .onTapGesture { closeFolder() }
-                    VStack(spacing: 25) {
-                        TextField("フォルダ名", text: $folderName)
-                            .font(.system(size: 28, weight: .regular)).multilineTextAlignment(.center)
-                            .focused($renaming).submitLabel(.done)
-                            .onSubmit { store.rename(id, to: folderName); renaming = false }
-                            .accessibilityLabel("フォルダ名")
-                        ScrollView {
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: 3), spacing: 24) {
-                                ForEach(item.slots, id: \.self) { slot in
-                                    Button { open(slot) } label: {
-                                        VStack(spacing: 6) {
-                                            SlotIcon(slot: slot).frame(width: icon, height: icon)
-                                            Text("\(slot)").font(.system(size: label))
-                                        }
-                                    }.buttonStyle(IconPressStyle())
-                                        .accessibilityLabel("アプリ \(slot)")
-                                        .contextMenu {
-                                            Button("フォルダから取り出す", systemImage: "arrow.up.forward.app") {
-                                                withAnimation(motion) { store.extract(slot, from: id) }
-                                                if !store.items.contains(where: { $0.id == id && $0.isFolder }) { closeFolder() }
-                                            }
-                                        }
-                                }
-                            }.padding(26)
-                        }.frame(height: width * 0.78, alignment: .top)
-                            .homeGlass(42)
-                            .matchedGeometryEffect(id: id, in: namespace)
-                        Button { closeFolder() } label: {
-                            Image(systemName: "xmark").font(.system(size: 17, weight: .semibold))
-                                .frame(width: 44, height: 44).homeGlass(22)
-                        }.accessibilityLabel("フォルダを閉じる")
-                    }.padding(.horizontal, width * 0.10)
-                        .transition(.opacity.combined(with: .scale(scale: reduceMotion ? 1 : 0.94)))
-                        .zIndex(2)
+                    FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
+                                          item: item, source: folderSource, metrics: metrics, name: $folderName,
+                                          open: { slot, rect in open(slot, source: rect) }, close: closeFolder,
+                                          rename: { store.rename(id, to: folderName) },
+                                          extract: { slot in
+                        withAnimation(folderMotion) { store.extract(slot, from: id) }
+                        if !store.items.contains(where: { $0.id == id && $0.isFolder }) { closeFolder() }
+                    })
+                    .opacity(reduceMotion ? folderProgress : 1)
+                    .allowsHitTesting(selectedSlot == nil)
+                    .accessibilityHidden(selectedSlot != nil)
+                    .zIndex(2)
                 }
                 if let slot = selectedSlot {
-                    SlotPage(slot: slot, wallpaper: wallpaper) { withAnimation(motion) { selectedSlot = nil } }
-                        .transition(.opacity.combined(with: .scale(scale: reduceMotion ? 1 : 0.86)))
-                        .zIndex(3)
+                    AppTransitionLayer(progress: reduceMotion ? 1 : appProgress, slot: slot,
+                                       source: appSource, size: geometry.size, safeTop: safeTop, wallpaper: wallpaper,
+                                       close: closeApp,
+                                       dragChanged: { amount in appProgress = 1 - min(0.55, max(0, amount / geometry.size.height)) },
+                                       dragEnded: { dismiss in
+                        if dismiss { closeApp() } else { withAnimation(appMotion) { appProgress = 1 } }
+                    })
+                    .opacity(reduceMotion ? appProgress : 1).zIndex(3)
                 }
-            }
-            .foregroundStyle(.white)
-            .animation(motion, value: folderID)
-            .animation(motion, value: selectedSlot)
+            }.frame(width: geometry.size.width, height: geometry.size.height)
+                .foregroundStyle(.white)
+                .onAppear {
+                    screenSize = geometry.size
+                    if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let window = scene.windows.first(where: { $0.isKeyWindow }) {
+                        safeTop = window.safeAreaInsets.top
+                    }
+                }
+                .onChange(of: geometry.size) { screenSize = $0 }
         }
+        .ignoresSafeArea()
         .sheet(isPresented: $showSearch) { searchSheet }
         .task { if let data = try? Data(contentsOf: wallpaperURL) { wallpaper = UIImage(data: data) } }
         .onChange(of: photo) { value in
@@ -274,7 +236,7 @@ struct HomeView: View {
                         wallpaperError = true; return
                     }
                     try jpeg.write(to: wallpaperURL, options: .atomic)
-                    withAnimation(motion) { wallpaper = image }
+                    withAnimation(.easeInOut(duration: 0.25)) { wallpaper = image }
                 } catch { wallpaperError = true }
             }
         }
@@ -283,22 +245,51 @@ struct HomeView: View {
         }
     }
 
-    private func homeTile(_ item: HomeItem, icon: CGFloat, label: CGFloat) -> some View {
+    private func homePages(_ metrics: HomeMetrics) -> some View {
+        ZStack {
+            TabView(selection: $page) {
+                ForEach(0..<max(1, (store.items.count + 23) / 24), id: \.self) { pageIndex in
+                    ZStack(alignment: .topLeading) {
+                        ForEach(Array(store.items.dropFirst(pageIndex * 24).prefix(24).enumerated()), id: \.element.id) { index, item in
+                            let rect = metrics.iconRect(index)
+                            homeTile(item, metrics: metrics, rect: rect)
+                                .frame(width: metrics.cell, height: metrics.tileHeight)
+                                .position(x: rect.midX, y: rect.minY + metrics.tileHeight / 2)
+                                .opacity(folderID == item.id || (selectedSlot.map { item.slots == [$0] } ?? false) ? 0 : 1)
+                        }
+                    }.frame(width: metrics.size.width, height: metrics.size.height).tag(pageIndex)
+                }
+            }.tabViewStyle(.page(indexDisplayMode: .never))
+            Button { showSearch = true } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "magnifyingglass").font(.system(size: metrics.label, weight: .semibold))
+                    Text("検索").font(.system(size: metrics.label, weight: .medium))
+                }
+                .frame(width: metrics.size.width * 146 / 947, height: metrics.size.height * 73 / 2048)
+                .homeGlass(40)
+            }.buttonStyle(IconPressStyle())
+                .position(x: metrics.size.width / 2, y: metrics.size.height * 1706.5 / 2048)
+        }
+    }
+    private func homeTile(_ item: HomeItem, metrics: HomeMetrics, rect: CGRect) -> some View {
         Button {
             if item.isFolder {
                 folderName = item.name
-                withAnimation(motion) { folderID = item.id }
-            } else if let slot = item.slots.first { open(slot) }
+                folderSource = rect
+                folderProgress = 0
+                folderID = item.id
+                DispatchQueue.main.async { withAnimation(folderMotion) { folderProgress = 1 } }
+            } else if let slot = item.slots.first { open(slot, source: rect) }
         } label: {
-            VStack(spacing: 6) {
+            VStack(spacing: metrics.labelGap) {
                 Group {
-                    if item.isFolder {
-                        FolderIcon(item: item).matchedGeometryEffect(id: item.id, in: namespace, isSource: folderID != item.id)
-                    } else { SlotIcon(slot: item.slots[0]) }
-                }.frame(width: icon, height: icon)
-                Text(item.name).font(.system(size: label)).lineLimit(1)
-                    .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
-            }.frame(maxWidth: .infinity).contentShape(Rectangle())
+                    if item.isFolder { FolderIcon(item: item) }
+                    else { SlotIcon(slot: item.slots[0]) }
+                }.frame(width: metrics.icon, height: metrics.icon)
+                Text(item.name).font(.system(size: metrics.label)).lineLimit(1)
+                    .frame(width: metrics.cell, height: metrics.labelHeight)
+                    .shadow(color: .black.opacity(0.35), radius: 1, y: 1)
+            }.frame(width: metrics.cell, height: metrics.tileHeight).contentShape(Rectangle())
         }.buttonStyle(IconPressStyle())
             .accessibilityLabel(item.isFolder ? "\(item.name)、\(item.slots.count)個のアプリ" : "アプリ \(item.name)")
             .onDrag { NSItemProvider(object: item.id as NSString) }
@@ -307,20 +298,32 @@ struct HomeView: View {
                 _ = provider.loadObject(ofClass: String.self) { source, _ in
                     guard let source else { return }
                     DispatchQueue.main.async {
-                        withAnimation(motion) { store.merge(source: source, target: item.id) }
+                        withAnimation(folderMotion) { store.merge(source: source, target: item.id) }
                     }
                 }
                 return true
             }
     }
-    private func open(_ slot: Int) {
-        renaming = false
-        withAnimation(motion) { selectedSlot = slot }
+    private func open(_ slot: Int, source: CGRect) {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        appSource = source
+        appProgress = 0
+        selectedSlot = slot
+        DispatchQueue.main.async { withAnimation(appMotion) { appProgress = 1 } }
+    }
+    private func closeApp() {
+        withAnimation(appMotion) { appProgress = 0 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.52) {
+            if appProgress == 0 { selectedSlot = nil }
+        }
     }
     private func closeFolder() {
         if let id = folderID { store.rename(id, to: folderName) }
-        renaming = false
-        withAnimation(motion) { folderID = nil }
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        withAnimation(folderMotion) { folderProgress = 0 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.48) {
+            if folderProgress == 0 { folderID = nil }
+        }
     }
     private var searchSheet: some View {
         NavigationStack {
@@ -329,7 +332,7 @@ struct HomeView: View {
                     ForEach((1...32).filter { query.isEmpty || String($0).contains(query) }, id: \.self) { slot in
                         Button {
                             showSearch = false
-                            open(slot)
+                            open(slot, source: CGRect(x: screenSize.width / 2 - 30, y: screenSize.height / 2 - 30, width: 60, height: 60))
                         } label: {
                             VStack { SlotIcon(slot: slot).frame(width: 60, height: 60); Text("\(slot)") }
                         }.buttonStyle(IconPressStyle())
@@ -351,9 +354,10 @@ struct HomeView: View {
 struct SlotPage: View {
     let slot: Int
     let wallpaper: UIImage?
+    let safeTop: CGFloat
     let close: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var drag: CGFloat = 0
+    let dragChanged: (CGFloat) -> Void
+    let dragEnded: (Bool) -> Void
     var body: some View {
         ZStack {
             Wallpaper(image: wallpaper)
@@ -370,17 +374,20 @@ struct SlotPage: View {
                             .frame(width: 48, height: 48).homeGlass(24)
                     }.accessibilityLabel("ホームへ戻る")
                     Spacer()
-                }.padding(.horizontal, 24).padding(.top, 12)
+                }.padding(.horizontal, 24).padding(.top, safeTop + 12)
                 Spacer()
             }
         }.foregroundStyle(.white)
-            .offset(x: reduceMotion ? 0 : drag)
             .gesture(DragGesture().onChanged { value in
-                if value.startLocation.x < 40 { drag = max(0, value.translation.width) }
+                if value.startLocation.x < 40 {
+                    dragChanged(max(0, value.translation.width))
+                } else if value.translation.height > abs(value.translation.width) {
+                    dragChanged(max(0, value.translation.height))
+                }
             }.onEnded { value in
-                if value.startLocation.x < 40 && (value.translation.width > 90 || value.predictedEndTranslation.width > 180) { close() }
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { drag = 0 }
+                let distance = value.startLocation.x < 40 ? value.translation.width : value.translation.height
+                let predicted = value.startLocation.x < 40 ? value.predictedEndTranslation.width : value.predictedEndTranslation.height
+                dragEnded(distance > 100 || predicted > 220)
             })
     }
 }
-
