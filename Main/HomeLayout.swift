@@ -124,11 +124,13 @@ struct FolderTransitionLayer: View, Animatable {
             Color.clear.contentShape(Rectangle()).onTapGesture(perform: close)
             Color.clear.frame(width: panel.width, height: panel.height)
                 .homeGlass(source.width * 0.24 + (metrics.size.width * 0.10 - source.width * 0.24) * t)
+                .opacity(item.isFolder ? 1 : t)
                 .position(x: panel.midX, y: panel.midY)
             // Pages retain the 3 x 3 layout used by SpringBoard folders.
             if item.slots.count <= 9 {
                 ForEach(Array(item.slots.enumerated()), id: \.element) { index, slot in
-                    let rect = interpolatedRect(metrics.previewRect(index, source: source), metrics.folderIconRect(index), t)
+                    let preview = item.isFolder ? metrics.previewRect(index, source: source) : source
+                    let rect = interpolatedRect(preview, metrics.folderIconRect(index), t)
                     folderButton(slot, rect: rect, opacity: nameOpacity)
                 }
             } else {
