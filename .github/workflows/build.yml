@@ -27,6 +27,10 @@ jobs:
           cp -R build/Build/Products/Release-iphoneos/main.app dist/Payload/
           cd dist
           /usr/bin/zip -qr main.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: main-ipa
+          path: dist/main.ipa
       - name: Select simulator
         run: |
           xcrun simctl list devices available -j > /tmp/devices.json
@@ -39,9 +43,10 @@ jobs:
               f.write('SIMULATOR_ID=' + device['udid'] + '\n')
           PY
       - name: Verify folder navigation and capture screens
+        timeout-minutes: 8
         run: |
           set -euo pipefail
-          xcodebuild test -project main.xcodeproj -scheme main -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -derivedDataPath simulator-build -resultBundlePath TestResults.xcresult CODE_SIGNING_ALLOWED=NO
+          xcodebuild test -project main.xcodeproj -scheme main -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 -derivedDataPath simulator-build -resultBundlePath TestResults.xcresult CODE_SIGNING_ALLOWED=NO
           xcrun xcresulttool export attachments --path TestResults.xcresult --output-path screenshots
       - uses: actions/upload-artifact@v4
         if: always()
@@ -50,14 +55,10 @@ jobs:
           path: |
             screenshots/
             TestResults.xcresult
-      - uses: actions/upload-artifact@v4
-        with:
-          name: main-ipa
-          path: dist/main.ipa
       - name: Publish downloadable build
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="build-${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" dist/main.ipa --title "main build ${GITHUB_RUN_NUMBER}" --notes "4 columns × 8 rows. Install main.ipa with AltStore Classic (re-signing required)." --target "$GITHUB_SHA"
+          gh release create "$TAG" dist/main.ipa --title "main build ${GITHUB_RUN_NUMBER}" --notes "Reference home layout, 32 numbered apps with animated folders and Liquid Glass. Install with configured AltForge Remote (re-signing required)." --target "$GITHUB_SHA"
 
