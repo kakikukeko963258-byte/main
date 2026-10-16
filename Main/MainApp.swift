@@ -144,6 +144,9 @@ struct HomeView: View {
     @State private var appSource = CGRect.zero
     @State private var screenSize = CGSize(width: 390, height: 844)
     @State private var safeTop: CGFloat = 47
+    @State private var safeBottom: CGFloat = 34
+    @State private var pagePan: CGFloat = 0
+    @State private var edgeDirection = 0
     @State private var page = 0
     @State private var showSearch = false
     @State private var query = ""
@@ -165,7 +168,7 @@ struct HomeView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let metrics = HomeMetrics(size: geometry.size)
+            let metrics = HomeMetrics(size: geometry.size, homeOffset: (safeTop - safeBottom) / 2)
             ZStack(alignment: .topLeading) {
                 Wallpaper(image: wallpaper)
                     .blur(radius: reduceMotion ? 0 : 6 * folderProgress)
@@ -212,12 +215,14 @@ struct HomeView: View {
                         .position(x: geometry.size.width / 2, y: geometry.size.height * 1706.5 / 2048).zIndex(25)
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height)
+                .coordinateSpace(name: "home")
                 .foregroundStyle(.white)
                 .onAppear {
                     screenSize = geometry.size
                     if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                        let window = scene.windows.first(where: { $0.isKeyWindow }) {
                         safeTop = window.safeAreaInsets.top
+                        safeBottom = window.safeAreaInsets.bottom
                     }
                 }
                 .onChange(of: geometry.size) { screenSize = $0 }
@@ -279,7 +284,7 @@ FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
 
     private func homePages(_ metrics: HomeMetrics) -> some View {
         ZStack {
-            TabView(selection: $page) {
+            HStack(spacing: 0) {
                 ForEach(0..<max(1, (store.items.count + 23) / 24), id: \.self) { pageIndex in
                     ZStack(alignment: .topLeading) {
                         ForEach(Array(store.items.dropFirst(pageIndex * 24).prefix(24).enumerated()), id: \.element.id) { index, item in
@@ -291,7 +296,23 @@ FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
                         }
                     }.frame(width: metrics.size.width, height: metrics.size.height).tag(pageIndex)
                 }
-            }.tabViewStyle(.page(indexDisplayMode: .never))
+            }
+            .offset(x: -CGFloat(page) * metrics.size.width + pagePan)
+            .frame(width: metrics.size.width, height: metrics.size.height, alignment: .leading)
+            .clipped().contentShape(Rectangle())
+            .animation(.spring(response: 0.32, dampingFraction: 0.94), value: page)
+            .simultaneousGesture(DragGesture(minimumDistance: 25).onChanged { value in
+                guard !editing && draggedItem == nil else { return }
+                pagePan = value.translation.width
+            }.onEnded { value in
+                guard !editing && draggedItem == nil else { return }
+                let delta = value.predictedEndTranslation.width
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.94)) {
+                    if delta < -metrics.size.width * 0.2 { page = min(page + 1, max(0, (store.items.count - 1) / 24)) }
+                    if delta > metrics.size.width * 0.2 { page = max(0, page - 1) }
+                    pagePan = 0
+                }
+            })
             Button { showSearch = true } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "magnifyingglass").font(.system(size: metrics.label, weight: .semibold))
@@ -327,7 +348,7 @@ FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
         }.buttonStyle(IconPressStyle())
             .accessibilityLabel(item.isFolder ? "\(item.name)、\(item.slots.count)個のアプリ" : "アプリ \(item.displayName)")
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.35)
-                .sequenced(before: DragGesture(minimumDistance: 0))
+                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("home")))
                 .onChanged { value in
                     switch value {
                     case .second(true, let drag):
@@ -337,6 +358,7 @@ FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
                         if draggedItem == nil { draggedItem = item; dragOrigin = rect }
                         dragTranslation = drag.translation
                         let point = CGPoint(x: rect.midX + drag.translation.width, y: rect.midY + drag.translation.height)
+                        updateEdgePaging(point, width: metrics.size.width)
                         let target = store.items.enumerated().first { index, candidate in
                             index / 24 == page && candidate.id != item.id && metrics.iconRect(index % 24).insetBy(dx: metrics.icon * 0.2, dy: metrics.icon * 0.2).contains(point)
                         }?.element.id
@@ -364,7 +386,20 @@ FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
         draggedItem = nil
         dragTranslation = .zero
         hoveredID = nil
+        edgeDirection = 0
+        pagePan = 0
         suppressTapUntil = Date().addingTimeInterval(0.25)
+    }
+    private func updateEdgePaging(_ point: CGPoint, width: CGFloat) {
+        let direction = point.x < 18 ? -1 : (point.x > width - 18 ? 1 : 0)
+        guard direction != edgeDirection else { return }
+        edgeDirection = direction
+        guard direction != 0 else { return }
+        let originalPage = page
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
+            guard edgeDirection == direction && draggedItem != nil && page == originalPage else { return }
+            page = min(max(0, page + direction), max(0, (store.items.count - 1) / 24))
+        }
     }
     private func open(_ slot: Int, source: CGRect) {
         guard !editing && Date() > suppressTapUntil else { return }

@@ -4,6 +4,7 @@ import SwiftUI
 // The source file is higher resolution; all values are normalized to this canvas.
 struct HomeMetrics {
     let size: CGSize
+    var homeOffset: CGFloat = 0
     var icon: CGFloat { size.width * 156 / 947 }
     var cell: CGFloat { size.width * 219 / 947 }
     var label: CGFloat { size.width * 29 / 947 }
@@ -17,7 +18,7 @@ struct HomeMetrics {
     func iconRect(_ index: Int) -> CGRect {
         let centers: [CGFloat] = [145.5, 364.5, 583, 801]
         return CGRect(x: size.width * centers[index % 4] / 947 - icon / 2,
-                      y: size.height * (163 + 238 * CGFloat((index % 24) / 4)) / 2048,
+                      y: size.height * (163 + 238 * CGFloat((index % 24) / 4)) / 2048 + homeOffset,
                       width: icon, height: icon)
     }
     func folderIconRect(_ index: Int) -> CGRect {
@@ -169,7 +170,7 @@ struct FolderTransitionLayer: View, Animatable {
         }.buttonStyle(IconPressStyle()).accessibilityLabel("アプリ \(slot)")
             .opacity(draggingSlot == slot ? 0 : 1)
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.35)
-                .sequenced(before: DragGesture(minimumDistance: 0))
+                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("home")))
                 .onChanged { value in
                     switch value {
                     case .second(true, let drag):
