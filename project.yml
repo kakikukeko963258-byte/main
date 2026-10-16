@@ -21,8 +21,21 @@ targets:
         MARKETING_VERSION: '1.0.0'
         CURRENT_PROJECT_VERSION: '1'
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  mainUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: main
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: '5.0'
+        TEST_TARGET_NAME: main
 schemes:
   main:
     build:
       targets:
         main: all
+    test:
+      targets: [mainUITests]
