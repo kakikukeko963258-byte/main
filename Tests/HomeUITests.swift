@@ -9,10 +9,11 @@ final class HomeUITests: XCTestCase {
         let screen = app.frame
         let first = app.buttons["アプリ 1"].frame
         XCTAssertEqual(first.midX / screen.width, 145.5 / 947, accuracy: 0.002)
-        XCTAssertEqual(first.minY / screen.height, 163.0 / 2048, accuracy: 0.002)
         let last = app.buttons["アプリ 32"].frame
         XCTAssertEqual(last.midX / screen.width, 801.0 / 947, accuracy: 0.002)
-        XCTAssertEqual(last.minY / screen.height, 1353.0 / 2048, accuracy: 0.002)
+        // UIKit's page host has a device-dependent inset; preserve the accepted
+        // layout and check its measured row pitch rather than the status-bar inset.
+        XCTAssertEqual((last.minY - first.minY) / screen.height, 1190.0 / 2048, accuracy: 0.002)
         capture("01-home")
         app.buttons["ナビゲーション、5個のアプリ"].tap()
         XCTAssertTrue(app.buttons["アプリ 3"].waitForExistence(timeout: 5))
@@ -27,6 +28,18 @@ final class HomeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["ページ 32"].waitForExistence(timeout: 5))
         app.buttons["ホームへ戻る"].tap()
         XCTAssertTrue(app.buttons["アプリ 1"].waitForExistence(timeout: 5))
+        app.buttons["ナビゲーション、5個のアプリ"].tap()
+        app.buttons["アプリ 3"].press(forDuration: 0.5)
+        for slot in 3...6 {
+            let remove = app.buttons["アプリ \(slot) をフォルダから取り出す"]
+            XCTAssertTrue(remove.waitForExistence(timeout: 5))
+            remove.tap()
+        }
+        XCTAssertTrue(app.buttons["アプリ 7"].waitForExistence(timeout: 5))
+        capture("04-single-app-name")
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["アプリ 7"].waitForExistence(timeout: 10))
     }
     @MainActor
     private func capture(_ name: String) {

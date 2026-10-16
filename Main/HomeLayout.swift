@@ -57,7 +57,7 @@ struct IconContour: Shape {
 struct IconGlass: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: IconContour())
+            content.glassEffect(.regular, in: IconContour())
         } else {
             content.background(.ultraThinMaterial, in: IconContour())
         }
@@ -104,6 +104,11 @@ struct FolderTransitionLayer: View, Animatable {
     @Binding var name: String
     var open: (Int, CGRect) -> Void
     var close: () -> Void
+    var editing: Bool
+    var beginEditing: () -> Void
+    var draggingSlot: Int?
+    var dragChanged: (Int, CGSize) -> Void
+    var dragEnded: (Int, CGSize) -> Void
     var rename: () -> Void
     var extract: (Int) -> Void
     var animatableData: CGFloat {
@@ -162,8 +167,29 @@ struct FolderTransitionLayer: View, Animatable {
                     .offset(y: rect.height + metrics.labelGap).opacity(opacity)
             }.frame(width: rect.width, height: rect.height)
         }.buttonStyle(IconPressStyle()).accessibilityLabel("アプリ \(slot)")
-            .contextMenu {
-                Button("フォルダから取り出す", systemImage: "arrow.up.forward.app") { extract(slot) }
+            .opacity(draggingSlot == slot ? 0 : 1)
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35)
+                .sequenced(before: DragGesture(minimumDistance: 0))
+                .onChanged { value in
+                    switch value {
+                    case .first(true): beginEditing()
+                    case .second(true, let drag):
+                        beginEditing()
+                        if let drag { dragChanged(slot, drag.translation) }
+                    default: break
+                    }
+                }.onEnded { value in
+                    if case .second(true, let drag) = value, let drag { dragEnded(slot, drag.translation) }
+                })
+            .overlay(alignment: .topLeading) {
+                if editing {
+                    Button { extract(slot) } label: {
+                        Image(systemName: "minus").font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.black).frame(width: 24, height: 24)
+                            .background(.white.opacity(0.9), in: Circle())
+                    }.buttonStyle(.plain).offset(x: -7, y: -7)
+                        .accessibilityLabel("アプリ \(slot) をフォルダから取り出す")
+                }
             }
             .position(x: rect.midX, y: rect.midY)
     }

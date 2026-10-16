@@ -1,6 +1,5 @@
 import SwiftUI
 import PhotosUI
-import UniformTypeIdentifiers
 
 @main
 struct MainApp: App {
@@ -14,6 +13,7 @@ struct HomeItem: Identifiable, Codable, Equatable {
     var name: String
     var slots: [Int]
     var isFolder: Bool { slots.count > 1 }
+    var displayName: String { isFolder ? name : slots.first.map(String.init) ?? name }
     static let initial: [HomeItem] = [
         HomeItem(id: "app-1", name: "1", slots: [1]),
         HomeItem(id: "app-2", name: "2", slots: [2]),
@@ -28,7 +28,11 @@ final class HomeStore: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: "home-layout-v2"),
            let saved = try? JSONDecoder().decode([HomeItem].self, from: data),
            saved.flatMap(\.slots).sorted() == Array(1...32) {
-            items = saved
+            items = saved.map { item in
+                var repaired = item
+                if repaired.slots.count == 1 { repaired.name = String(repaired.slots[0]) }
+                return repaired
+            }
         } else { items = HomeItem.initial }
     }
     private func save() {
@@ -47,7 +51,7 @@ final class HomeStore: ObservableObject {
         items = result
     }
     func rename(_ id: String, to name: String) {
-        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        guard let index = items.firstIndex(where: { $0.id == id }), items[index].isFolder else { return }
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         items[index].name = String(clean.prefix(24))
@@ -60,13 +64,21 @@ final class HomeStore: ObservableObject {
         result.append(HomeItem(id: UUID().uuidString, name: "\(slot)", slots: [slot]))
         items = result
     }
+    func move(source: String, target: String) {
+        guard source != target, let sourceIndex = items.firstIndex(where: { $0.id == source }),
+              let targetIndex = items.firstIndex(where: { $0.id == target }) else { return }
+        var result = items
+        let item = result.remove(at: sourceIndex)
+        result.insert(item, at: min(targetIndex, result.count))
+        items = result
+    }
 }
 
 struct GlassSurface: ViewModifier {
     var radius: CGFloat
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
         } else {
             content.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
@@ -82,30 +94,9 @@ struct Wallpaper: View {
     var image: UIImage?
     var body: some View {
         GeometryReader { geometry in
-            if let image {
-                Image(uiImage: image).resizable().scaledToFill()
-                    .frame(width: geometry.size.width, height: geometry.size.height).clipped()
-            } else {
-                ZStack {
-                    LinearGradient(colors: [Color(red: 0.02, green: 0.30, blue: 0.49),
-                                            Color(red: 0.06, green: 0.47, blue: 0.71),
-                                            Color(red: 0.10, green: 0.16, blue: 0.17)],
-                                   startPoint: .top, endPoint: .bottom)
-                    Ellipse().fill(Color(red: 0.63, green: 0.57, blue: 0.41))
-                        .frame(width: geometry.size.width * 0.52, height: geometry.size.height * 0.56)
-                        .position(x: geometry.size.width * 0.47, y: geometry.size.height * 0.57)
-                        .blur(radius: geometry.size.width * 0.105)
-                    Ellipse().fill(Color(red: 0.80, green: 0.64, blue: 0.35))
-                        .frame(width: geometry.size.width * 0.28, height: geometry.size.height * 0.52)
-                        .rotationEffect(.degrees(-15))
-                        .position(x: geometry.size.width * 0.73, y: geometry.size.height * 0.77)
-                        .blur(radius: geometry.size.width * 0.08)
-                    Ellipse().fill(Color(red: 0.12, green: 0.16, blue: 0.09))
-                        .frame(width: geometry.size.width * 0.72, height: geometry.size.height * 0.35)
-                        .position(x: geometry.size.width * 0.30, y: geometry.size.height * 0.91)
-                        .blur(radius: geometry.size.width * 0.09)
-                }
-            }
+            Image(uiImage: image ?? WallpaperArtwork.image(size: geometry.size))
+                .resizable().scaledToFill()
+                .frame(width: geometry.size.width, height: geometry.size.height).clipped()
         }.ignoresSafeArea()
     }
 }
@@ -113,21 +104,8 @@ struct Wallpaper: View {
 struct SlotIcon: View {
     let slot: Int
     var body: some View {
-        GeometryReader { geo in
-            let hues: [Double] = [0.58, 0.48, 0.35, 0.08, 0.66, 0.97, 0.12, 0.56]
-            let hue = hues[(slot - 1) % hues.count]
-            ZStack {
-                IconContour()
-                    .fill(LinearGradient(colors: [Color(hue: hue, saturation: 0.64, brightness: 0.98),
-                                                 Color(hue: hue, saturation: 0.88, brightness: 0.63)],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing)).opacity(0.62)
-                Text("\(slot)").font(.system(size: geo.size.width * 0.44, weight: .medium, design: .rounded))
-            }
-            .modifier(IconGlass())
-            .overlay(IconContour()
-                .stroke(LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.05), .white.opacity(0.25)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.7))
-        }.aspectRatio(1, contentMode: .fit).foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.14), radius: 2, y: 2)
+        Image(uiImage: IconArtwork.image(slot)).resizable().interpolation(.high)
+            .aspectRatio(1, contentMode: .fit)
     }
 }
 
@@ -173,6 +151,14 @@ struct HomeView: View {
     @State private var wallpaper: UIImage?
     @State private var wallpaperError = false
     @State private var folderName = ""
+    @State private var editing = false
+    @State private var draggedItem: HomeItem?
+    @State private var dragOrigin = CGRect.zero
+    @State private var dragTranslation = CGSize.zero
+    @State private var hoveredID: String?
+    @State private var hoverStart = Date.distantPast
+    @State private var suppressTapUntil = Date.distantPast
+    @State private var folderDraggedSlot: Int?
     private var folderMotion: Animation { reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.42, dampingFraction: 0.88) }
     private var appMotion: Animation { reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.45, dampingFraction: 0.90) }
     private var wallpaperURL: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("wallpaper.jpg") }
@@ -184,20 +170,14 @@ struct HomeView: View {
                 Wallpaper(image: wallpaper)
                     .blur(radius: reduceMotion ? 0 : 6 * folderProgress)
                 homePages(metrics)
+                    .compositingGroup()
                     .scaleEffect(reduceMotion ? 1 : 1 + 0.07 * folderProgress + 0.035 * appProgress)
                     .blur(radius: 10 * folderProgress + 7 * appProgress)
                     .opacity(1 - 0.12 * folderProgress)
                     .allowsHitTesting(folderID == nil && selectedSlot == nil)
                     .accessibilityHidden(folderID != nil || selectedSlot != nil)
                 if let id = folderID, let item = store.items.first(where: { $0.id == id }) {
-                    FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
-                                          item: item, source: folderSource, metrics: metrics, name: $folderName,
-                                          open: { slot, rect in open(slot, source: rect) }, close: closeFolder,
-                                          rename: { store.rename(id, to: folderName) },
-                                          extract: { slot in
-                        withAnimation(folderMotion) { store.extract(slot, from: id) }
-                        if !store.items.contains(where: { $0.id == id && $0.isFolder }) { closeFolder() }
-                    })
+                    folderOverlay(item, id: id, metrics: metrics)
                     .opacity(reduceMotion ? folderProgress : 1)
                     .allowsHitTesting(selectedSlot == nil)
                     .accessibilityHidden(selectedSlot != nil)
@@ -213,6 +193,24 @@ struct HomeView: View {
                     })
                     .opacity(reduceMotion ? appProgress : 1).zIndex(3)
                 }
+                if let item = draggedItem {
+                    Group {
+                        if item.isFolder { FolderIcon(item: item) }
+                        else { SlotIcon(slot: item.slots[0]) }
+                    }.frame(width: metrics.icon, height: metrics.icon)
+                        .scaleEffect(1.04)
+                        .shadow(color: .black.opacity(0.25), radius: 6, y: 5)
+                        .position(x: dragOrigin.midX + dragTranslation.width,
+                                  y: dragOrigin.midY + dragTranslation.height)
+                        .allowsHitTesting(false).accessibilityHidden(true).zIndex(20)
+                }
+                if editing && draggedItem == nil {
+                    Button("完了") { editing = false }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 15, weight: .semibold))
+                        .padding(.horizontal, 16).padding(.vertical, 9).homeGlass(24)
+                        .position(x: geometry.size.width / 2, y: geometry.size.height * 1706.5 / 2048).zIndex(25)
+                }
             }.frame(width: geometry.size.width, height: geometry.size.height)
                 .foregroundStyle(.white)
                 .onAppear {
@@ -226,13 +224,16 @@ struct HomeView: View {
         }
         .ignoresSafeArea()
         .sheet(isPresented: $showSearch) { searchSheet }
-        .task { if let data = try? Data(contentsOf: wallpaperURL) { wallpaper = UIImage(data: data) } }
+        .task {
+            for slot in 1...32 { _ = IconArtwork.image(slot) }
+            if let data = try? Data(contentsOf: wallpaperURL) { wallpaper = WallpaperArtwork.downsample(data) }
+        }
         .onChange(of: photo) { value in
             Task {
                 guard let value else { return }
                 do {
                     guard let data = try await value.loadTransferable(type: Data.self),
-                          let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.9) else {
+                          let image = WallpaperArtwork.downsample(data), let jpeg = image.jpegData(compressionQuality: 0.9) else {
                         wallpaperError = true; return
                     }
                     try jpeg.write(to: wallpaperURL, options: .atomic)
@@ -245,6 +246,37 @@ struct HomeView: View {
         }
     }
 
+    private func folderOverlay(_ item: HomeItem, id: String, metrics: HomeMetrics) -> FolderTransitionLayer {
+FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
+                                          item: item, source: folderSource, metrics: metrics, name: $folderName,
+                                          open: { slot, rect in open(slot, source: rect) }, close: closeFolder,
+                                          editing: editing, beginEditing: { editing = true },
+                                          draggingSlot: folderDraggedSlot,
+                                          dragChanged: { slot, translation in
+                        editing = true
+                        folderDraggedSlot = slot
+                        draggedItem = HomeItem(id: "folder-drag", name: String(slot), slots: [slot])
+                        dragOrigin = metrics.folderIconRect((item.slots.firstIndex(of: slot) ?? 0) % 9)
+                        dragTranslation = translation
+                    }, dragEnded: { slot, translation in
+                        let origin = metrics.folderIconRect((item.slots.firstIndex(of: slot) ?? 0) % 9)
+                        let point = CGPoint(x: origin.midX + translation.width, y: origin.midY + translation.height)
+                        if !metrics.folderRect.insetBy(dx: -12, dy: -12).contains(point) {
+                            store.extract(slot, from: id)
+                            closeFolder()
+                        }
+                        folderDraggedSlot = nil
+                        draggedItem = nil
+                        dragTranslation = .zero
+                        suppressTapUntil = Date().addingTimeInterval(0.25)
+                    },
+                                          rename: { store.rename(id, to: folderName) },
+                                          extract: { slot in
+                        withAnimation(folderMotion) { store.extract(slot, from: id) }
+                        if !store.items.contains(where: { $0.id == id && $0.isFolder }) { closeFolder() }
+                    })
+    }
+
     private func homePages(_ metrics: HomeMetrics) -> some View {
         ZStack {
             TabView(selection: $page) {
@@ -255,7 +287,7 @@ struct HomeView: View {
                             homeTile(item, metrics: metrics, rect: rect)
                                 .frame(width: metrics.cell, height: metrics.tileHeight)
                                 .position(x: rect.midX, y: rect.minY + metrics.tileHeight / 2)
-                                .opacity(folderID == item.id || (selectedSlot.map { item.slots == [$0] } ?? false) ? 0 : 1)
+                                .opacity(draggedItem?.id == item.id || folderID == item.id || (selectedSlot.map { item.slots == [$0] } ?? false) ? 0 : 1)
                         }
                     }.frame(width: metrics.size.width, height: metrics.size.height).tag(pageIndex)
                 }
@@ -273,6 +305,7 @@ struct HomeView: View {
     }
     private func homeTile(_ item: HomeItem, metrics: HomeMetrics, rect: CGRect) -> some View {
         Button {
+            guard !editing && Date() > suppressTapUntil else { return }
             if item.isFolder {
                 folderName = item.name
                 folderSource = rect
@@ -286,25 +319,57 @@ struct HomeView: View {
                     if item.isFolder { FolderIcon(item: item) }
                     else { SlotIcon(slot: item.slots[0]) }
                 }.frame(width: metrics.icon, height: metrics.icon)
-                Text(item.name).font(.system(size: metrics.label)).lineLimit(1)
+                    .overlay(IconContour().stroke(.white.opacity(hoveredID == item.id ? 0.8 : 0), lineWidth: 2))
+                Text(item.displayName).font(.system(size: metrics.label)).lineLimit(1)
                     .frame(width: metrics.cell, height: metrics.labelHeight)
                     .shadow(color: .black.opacity(0.35), radius: 1, y: 1)
             }.frame(width: metrics.cell, height: metrics.tileHeight).contentShape(Rectangle())
         }.buttonStyle(IconPressStyle())
-            .accessibilityLabel(item.isFolder ? "\(item.name)、\(item.slots.count)個のアプリ" : "アプリ \(item.name)")
-            .onDrag { NSItemProvider(object: item.id as NSString) }
-            .onDrop(of: [UTType.text], isTargeted: nil) { providers in
-                guard let provider = providers.first else { return false }
-                _ = provider.loadObject(ofClass: String.self) { source, _ in
-                    guard let source else { return }
-                    DispatchQueue.main.async {
-                        withAnimation(folderMotion) { store.merge(source: source, target: item.id) }
+            .accessibilityLabel(item.isFolder ? "\(item.name)、\(item.slots.count)個のアプリ" : "アプリ \(item.displayName)")
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35)
+                .sequenced(before: DragGesture(minimumDistance: 0))
+                .onChanged { value in
+                    switch value {
+                    case .first(true):
+                        editing = true
+                        suppressTapUntil = Date().addingTimeInterval(0.8)
+                    case .second(true, let drag):
+                        editing = true
+                        guard let drag else { return }
+                        if draggedItem == nil { draggedItem = item; dragOrigin = rect }
+                        dragTranslation = drag.translation
+                        let point = CGPoint(x: rect.midX + drag.translation.width, y: rect.midY + drag.translation.height)
+                        let target = store.items.enumerated().first { index, candidate in
+                            index / 24 == page && candidate.id != item.id && metrics.iconRect(index % 24).insetBy(dx: metrics.icon * 0.2, dy: metrics.icon * 0.2).contains(point)
+                        }?.element.id
+                        if hoveredID != target { hoveredID = target; hoverStart = Date() }
+                    default: break
                     }
-                }
-                return true
+                }.onEnded { value in
+                    guard case .second(true, let drag) = value, let drag else {
+                        draggedItem = nil; return
+                    }
+                    finishMove(item, translation: drag.translation, origin: rect, metrics: metrics)
+                })
+    }
+    private func finishMove(_ item: HomeItem, translation: CGSize, origin: CGRect, metrics: HomeMetrics) {
+        let point = CGPoint(x: origin.midX + translation.width, y: origin.midY + translation.height)
+        if let target = store.items.enumerated().first(where: { index, candidate in
+            index / 24 == page && candidate.id != item.id && metrics.iconRect(index % 24).insetBy(dx: -12, dy: -18).contains(point)
+        })?.element {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                if hoveredID == target.id && Date().timeIntervalSince(hoverStart) > 0.65 {
+                    store.merge(source: item.id, target: target.id)
+                } else { store.move(source: item.id, target: target.id) }
             }
+        }
+        draggedItem = nil
+        dragTranslation = .zero
+        hoveredID = nil
+        suppressTapUntil = Date().addingTimeInterval(0.25)
     }
     private func open(_ slot: Int, source: CGRect) {
+        guard !editing && Date() > suppressTapUntil else { return }
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         appSource = source
         appProgress = 0
