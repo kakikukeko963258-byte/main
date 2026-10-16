@@ -43,10 +43,9 @@ jobs:
               f.write('SIMULATOR_ID=' + device + '\n')
           PY
       - name: Boot preconfigured iPhone
-        timeout-minutes: 6
+        timeout-minutes: 1
         run: |
           xcrun simctl boot "$SIMULATOR_ID"
-          xcrun simctl bootstatus "$SIMULATOR_ID" -b
       - name: Verify folder navigation and capture screens
         timeout-minutes: 8
         run: |
