@@ -172,7 +172,6 @@ struct FolderTransitionLayer: View, Animatable {
                 .sequenced(before: DragGesture(minimumDistance: 0))
                 .onChanged { value in
                     switch value {
-                    case .first(true): beginEditing()
                     case .second(true, let drag):
                         beginEditing()
                         if let drag { dragChanged(slot, drag.translation) }

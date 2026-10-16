@@ -330,11 +330,9 @@ FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
                 .sequenced(before: DragGesture(minimumDistance: 0))
                 .onChanged { value in
                     switch value {
-                    case .first(true):
-                        editing = true
-                        suppressTapUntil = Date().addingTimeInterval(0.8)
                     case .second(true, let drag):
                         editing = true
+                        suppressTapUntil = Date().addingTimeInterval(0.8)
                         guard let drag else { return }
                         if draggedItem == nil { draggedItem = item; dragOrigin = rect }
                         dragTranslation = drag.translation
