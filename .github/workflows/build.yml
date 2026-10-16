@@ -42,15 +42,13 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild test -project main.xcodeproj -scheme main -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -derivedDataPath simulator-build -resultBundlePath TestResults.xcresult CODE_SIGNING_ALLOWED=NO
-          xcrun simctl launch "$SIMULATOR_ID" com.kakikukeko.main
-          sleep 3
-          xcrun simctl io "$SIMULATOR_ID" screenshot home.png
+          xcrun xcresulttool export attachments --path TestResults.xcresult --output-path screenshots
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: visual-verification
           path: |
-            home.png
+            screenshots/
             TestResults.xcresult
       - uses: actions/upload-artifact@v4
         with:
