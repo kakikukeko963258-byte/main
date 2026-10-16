@@ -52,7 +52,13 @@ jobs:
         timeout-minutes: 8
         run: |
           set -euo pipefail
+          xcrun simctl io "$SIMULATOR_ID" recordVideo --codec=h264 motion.mov > /tmp/recording.log 2>&1 &
+          RECORD_PID=$!
+          trap 'kill -INT "$RECORD_PID" 2>/dev/null || true' EXIT
           xcodebuild test -project main.xcodeproj -scheme main -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 -derivedDataPath simulator-build -resultBundlePath TestResults.xcresult CODE_SIGNING_ALLOWED=NO
+          kill -INT "$RECORD_PID" 2>/dev/null || true
+          wait "$RECORD_PID" || true
+          trap - EXIT
           xcrun xcresulttool export attachments --path TestResults.xcresult --output-path screenshots
       - uses: actions/upload-artifact@v4
         if: always()
@@ -61,6 +67,7 @@ jobs:
           path: |
             screenshots/
             TestResults.xcresult
+            motion.mov
       - name: Publish downloadable build
         env:
           GH_TOKEN: ${{ github.token }}
