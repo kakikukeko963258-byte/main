@@ -1,18 +1,20 @@
 # main
 
-iPhone用のSwiftUIアプリ。4列×8行、合計32個の番号付きアイコンを表示し、各番号のページへ移動します。左上の戻るボタン、または画面左端からのスワイプで戻れます。
+iPhone用のSwiftUIアプリ。写真を参考にした4列×6行のホーム画面に、合計32個の番号付きアイコンをフォルダとともに配置し、各番号のページへ移動します。左上の戻るボタン、または画面左端からのスワイプで戻れます。
 
-アプリ名・プロジェクトIDは `main`。iOSのBundle IDは `com.kakikukeko.main`、iOS 16以降に対応します。iPhoneホーム画面風の壁紙・角丸アイコン・番号ラベルを使用し、8行が1画面に入るよう画面高に合わせて縮小します。ステータスバーは実際のiOSの表示です。OSのホーム画面を置き換える機能や、他のIPAをこのアプリ内にインストールする機能はありません。
+アプリ名・プロジェクトIDは `main`。iOSのBundle IDは `com.kakikukeko.main`、iOS 16以降に対応します。iPhoneホーム画面風の壁紙・角丸アイコン・番号ラベルを使用し、写真の6行配置に合わせ、画面高に応じて行間を調整します。ステータスバーは実際のiOSの表示です。OSのホーム画面を置き換える機能や、他のIPAをこのアプリ内にインストールする機能はありません。
 
 ## 公開ビルド
 
 mainへのpushまたはActionsの手動実行でmacOS runner + XcodeがReleaseビルドします。Actions Artifact `main-ipa` とGitHub Releasesから `main.ipa` を取得できます。
 
-WindowsではXcode不要です。AltServerとAltStore Classicを用意し、ダウンロードしたIPAをiPhoneのAltStore Classicの「My Apps」→「+」から選んでインストールしてください。IPAは未署名で、AltStore側でApple IDを使って再署名します。AltStore PAL向け配布ではありません。
+普段のインストールは設定済みの改造版AltForge Remoteを使用します。公開IPAのハッシュを確認し、許可済みIPAフォルダーへ追加して登録済み端末へ署名・転送します。接続情報は公開しません。
+
+WindowsではXcode不要です。AltStore Classicを手動で使う場合は、ダウンロードしたIPAをiPhoneのAltStore Classicの「My Apps」→「+」から選んでインストールしてください。IPAは未署名で、AltStore側でApple IDを使って再署名します。AltStore PAL向け配布ではありません。
 
 ## 拡張
 
-`Main/MainApp.swift` の `AppSlot` と `SlotPage` を拡張すると、番号ごとの機能を追加できます。外部のiOSアプリを埋め込むのではなく、このプロジェクト内に機能を実装する構成です。
+`Main/MainApp.swift` の `HomeItem` と `SlotPage` を拡張すると、番号ごとの機能を追加できます。外部のiOSアプリを埋め込むのではなく、このプロジェクト内に機能を実装する構成です。
 
 ## 写真のレイアウトを反映した版
 
@@ -23,3 +25,4 @@ WindowsではXcode不要です。AltServerとAltStore Classicを用意し、ダ�
 iOS 26以降は標準のLiquid Glassをアイコン・フォルダ・操作ボタンに使用し、それ以前はマテリアルへ切り替えます。フォルダ展開の位置補間、背景ぼかし、押し込み、ページ開閉にスプリングアニメーションを使用し、「視差効果を減らす」設定に対応します。
 
 元の壁紙ファイルは取得できていません。画像から色・ぼけを参考に再現した背景です。「検索」画面左上の写真ボタンから任意の背景を選択できます。選んだ写真は端末内だけに保存されます。参考スクリーンショット自体は公開リポジトリに含めません。
+
