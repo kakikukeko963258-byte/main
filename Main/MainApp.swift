@@ -618,7 +618,10 @@ struct HomeView: View {
         if reduceMotion { withAnimation(appMotion) { appProgress = 0 } }
         else { appProgress = 0 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.56) {
-            if appProgress == 0 { selectedSlot = nil }
+            if appProgress == 0 {
+                selectedSlot = nil
+                DispatchQueue.main.async { UIAccessibility.post(notification: .screenChanged, argument: nil) }
+            }
         }
     }
     private func closeFolder() {
@@ -627,7 +630,10 @@ struct HomeView: View {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         withAnimation(folderMotion) { folderProgress = 0 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.48) {
-            if folderProgress == 0 { folderID = nil }
+            if folderProgress == 0 {
+                folderID = nil
+                DispatchQueue.main.async { UIAccessibility.post(notification: .layoutChanged, argument: nil) }
+            }
         }
     }
     private var searchSheet: some View {

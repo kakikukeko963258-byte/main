@@ -340,9 +340,16 @@ final class AppWindowView: UIView {
     }
     private func finishIfExpanded() {
         guard currentProgress == 1 else { return }
+        // Finish the projective animation through UIView too. UIKit's hit-test
+        // and accessibility geometry must return to an ordinary full-size view.
+        surface.transform = .identity
+        surface.layer.transform = CATransform3DIdentity
         host.view.isHidden = false
         capture?.removeFromSuperview()
         capture = nil
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        UIAccessibility.post(notification: .screenChanged, argument: nil)
     }
     private func apply(_ t: CGFloat) {
         let morph = LaunchMorph(progress: t, source: source, screen: pageSize)
