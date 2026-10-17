@@ -197,6 +197,7 @@ struct HomeView: View {
     @State private var wallpaperError = false
     @State private var folderName = ""
     @State private var editing = false
+    @State private var iconMenu: IconMenuSelection?
     @State private var draggedItem: HomeItem?
     @StateObject private var liftFeedback = LiftFeedback()
     @State private var liftKey: String?
@@ -243,6 +244,24 @@ struct HomeView: View {
                     })
                     .opacity(reduceMotion ? appProgress : 1).zIndex(3)
                 }
+                if let selection = iconMenu {
+                    HomeIconMenu(selection: selection, size: geometry.size,
+                        open: {
+                            finishEditing()
+                            suppressTapUntil = .distantPast
+                            openItem(selection.item, source: selection.source)
+                        },
+                        edit: { iconMenu = nil; cancelLift(); editing = true },
+                        remove: {
+                            finishEditing()
+                            if let folder = selection.folderID, let slot = selection.item.slots.first {
+                                store.extract(slot, from: folder)
+                                if !store.items.contains(where: { $0.id == folder && $0.isFolder }) { closeFolder() }
+                            } else { removalItem = selection.item }
+                        }, dismiss: finishEditing)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                        .zIndex(15)
+                }
                 if let item = draggedItem {
                     Group {
                         if item.isFolder { FolderIcon(item: item) }
@@ -256,7 +275,7 @@ struct HomeView: View {
                         .allowsHitTesting(false).accessibilityHidden(true).zIndex(20)
                 }
                 if editing && draggedItem == nil {
-                    Button("完了") { editing = false }
+                    Button("完了", action: finishEditing)
                         .buttonStyle(.plain)
                         .font(.system(size: 15, weight: .semibold))
                         .padding(.horizontal, 16).padding(.vertical, 9).homeGlass(24)
@@ -278,7 +297,7 @@ struct HomeView: View {
         .ignoresSafeArea()
         .onChange(of: scenePhase) { phase in
             if phase != .active {
-                cancelLift()
+                finishEditing()
                 folderDraggedSlot = nil
                 hoveredID = nil
                 edgeDirection = 0
@@ -328,21 +347,28 @@ struct HomeView: View {
         return FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
             item: displayItem, source: folderSource, metrics: metrics, name: $folderName,
             open: { slot, rect in open(slot, source: rect) }, close: closeFolder,
-            editing: editing,
+            editing: editing, blankTap: finishEditing,
             prepareLift: { liftFeedback.prepare() },
             beginLift: { slot in
                 guard liftKey == nil else { return }
                 liftKey = "folder-\(slot)"
                 liftFeedback.fire()
-                editing = true
-                folderDraggedSlot = slot
-                folderPreview = item.slots
-                draggedItem = HomeItem(id: "folder-drag", name: String(slot), slots: [slot])
                 dragOrigin = metrics.folderIconRect((item.slots.firstIndex(of: slot) ?? 0) % 9)
                 dragTranslation = .zero
+                if editing { startFolderDrag(slot, item: item) }
+                else {
+                    let child = HomeItem(id: "folder-\(slot)", name: String(slot), slots: [slot])
+                    withAnimation(.easeOut(duration: 0.16)) {
+                        iconMenu = IconMenuSelection(item: child, source: dragOrigin, folderID: id)
+                    }
+                }
             },
             draggingSlot: folderDraggedSlot,
             dragChanged: { slot, translation in
+                if folderDraggedSlot == nil && hypot(translation.width, translation.height) > 6 {
+                    startFolderDrag(slot, item: item)
+                }
+                guard folderDraggedSlot != nil else { return }
                 dragTranslation = translation
                 let point = CGPoint(x: dragOrigin.midX + translation.width, y: dragOrigin.midY + translation.height)
                 guard var slots = folderPreview, let from = slots.firstIndex(of: slot),
@@ -353,6 +379,7 @@ struct HomeView: View {
                 withAnimation(reorderMotion) { folderPreview = slots }
             },
             dragEnded: { slot, translation in
+                guard folderDraggedSlot != nil else { cancelLift(); return }
                 let point = CGPoint(x: dragOrigin.midX + translation.width, y: dragOrigin.midY + translation.height)
                 if !metrics.folderRect.insetBy(dx: -12, dy: -12).contains(point) {
                     store.extract(slot, from: id)
@@ -373,6 +400,13 @@ struct HomeView: View {
                 if !store.items.contains(where: { $0.id == id && $0.isFolder }) { closeFolder() }
             })
     }
+    private func startFolderDrag(_ slot: Int, item: HomeItem) {
+        iconMenu = nil
+        editing = true
+        folderDraggedSlot = slot
+        folderPreview = item.slots
+        draggedItem = HomeItem(id: "folder-drag", name: String(slot), slots: [slot])
+    }
     private var reorderMotion: Animation { reduceMotion ? .linear(duration: 0.01) : .spring(response: 0.27, dampingFraction: 0.86) }
     private var displayedItems: [HomeItem] { dragPreview ?? store.items }
     private func homePages(_ metrics: HomeMetrics) -> some View {
@@ -380,6 +414,10 @@ struct HomeView: View {
             // One stable ForEach keeps the touched view alive while its slot changes,
             // including a move across a page boundary. Only positions animate.
             ZStack(alignment: .topLeading) {
+                Color.clear
+                    .frame(width: CGFloat(max(1, (store.items.count + 23) / 24)) * metrics.size.width,
+                           height: metrics.size.height)
+                    .contentShape(Rectangle()).onTapGesture(perform: finishEditing)
                 ForEach(Array(displayedItems.enumerated()), id: \.element.id) { index, item in
                     let rect = metrics.iconRect(index % 24)
                     homeTile(item, metrics: metrics, rect: rect)
@@ -405,7 +443,7 @@ struct HomeView: View {
                     pagePan = 0
                 }
             })
-            Button { editing = false; showSearch = true } label: {
+            Button { finishEditing(); showSearch = true } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "magnifyingglass").font(.system(size: metrics.label, weight: .semibold))
                     Text("検索").font(.system(size: metrics.label, weight: .medium))
@@ -419,13 +457,7 @@ struct HomeView: View {
     private func homeTile(_ item: HomeItem, metrics: HomeMetrics, rect: CGRect) -> some View {
         Button {
             guard !editing && Date() > suppressTapUntil else { return }
-            if item.isFolder {
-                folderName = item.name
-                folderSource = rect
-                folderProgress = 0
-                folderID = item.id
-                DispatchQueue.main.async { withAnimation(folderMotion) { folderProgress = 1 } }
-            } else if let slot = item.slots.first { open(slot, source: rect) }
+            openItem(item, source: rect)
         } label: {
             VStack(spacing: metrics.labelGap) {
                 Group {
@@ -437,6 +469,9 @@ struct HomeView: View {
                     .frame(width: metrics.cell, height: metrics.labelHeight)
                     .shadow(color: .black.opacity(0.35), radius: 1, y: 1)
             }.frame(width: metrics.cell, height: metrics.tileHeight).contentShape(Rectangle())
+                .modifier(EditingWiggle(active: editing && draggedItem?.id != item.id,
+                                        seed: item.slots.first ?? 0,
+                                        anchor: UnitPoint(x: 0.5, y: metrics.icon / (2 * metrics.tileHeight))))
         }.buttonStyle(IconPressStyle())
             .accessibilityLabel(item.isFolder ? "\(item.name)、\(item.slots.count)個のアプリ" : "アプリ \(item.displayName)")
             .overlay(alignment: .topLeading) {
@@ -459,27 +494,52 @@ struct HomeView: View {
                 .onChanged { value in
                     if case .second(true, let drag) = value {
                         beginHomeLift(item, rect: rect)
-                        if let drag { updateHomeLift(drag.translation, metrics: metrics) }
+                        if let drag {
+                            if draggedItem == nil && hypot(drag.translation.width, drag.translation.height) > 6 {
+                                startHomeDrag(item)
+                            }
+                            if draggedItem != nil { updateHomeLift(drag.translation, metrics: metrics) }
+                        }
                     }
                 }.onEnded { value in
-                    if case .second(true, let drag) = value, let drag {
+                    if case .second(true, let drag) = value, let drag, draggedItem != nil {
                         updateHomeLift(drag.translation, metrics: metrics)
                         finishMove(item)
                     } else { cancelLift() }
                 })
-            .modifier(EditingWiggle(active: editing && draggedItem?.id != item.id,
-                                    seed: item.slots.first ?? 0,
-                                    anchor: UnitPoint(x: 0.5, y: metrics.icon / (2 * metrics.tileHeight))))
+    }
+    private func openItem(_ item: HomeItem, source: CGRect) {
+        if item.isFolder {
+            folderName = item.name
+            folderSource = source
+            folderProgress = 0
+            folderID = item.id
+            DispatchQueue.main.async { withAnimation(folderMotion) { folderProgress = 1 } }
+        } else if let slot = item.slots.first { open(slot, source: source) }
+    }
+    private func finishEditing() {
+        iconMenu = nil
+        cancelLift()
+        editing = false
     }
     private func beginHomeLift(_ item: HomeItem, rect: CGRect) {
         guard liftKey == nil else { return }
         liftKey = item.id
         liftFeedback.fire()
-        editing = true
         suppressTapUntil = Date().addingTimeInterval(0.8)
-        draggedItem = item
         dragOrigin = rect
         dragTranslation = .zero
+        if editing { startHomeDrag(item) }
+        else {
+            withAnimation(.easeOut(duration: 0.16)) {
+                iconMenu = IconMenuSelection(item: item, source: rect)
+            }
+        }
+    }
+    private func startHomeDrag(_ item: HomeItem) {
+        iconMenu = nil
+        editing = true
+        draggedItem = item
         dragPreview = store.items
     }
     private func updateHomeLift(_ translation: CGSize, metrics: HomeMetrics) {
@@ -549,6 +609,7 @@ struct HomeView: View {
         }
     }
     private func closeFolder() {
+        iconMenu = nil
         if let id = folderID { store.rename(id, to: folderName) }
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         withAnimation(folderMotion) { folderProgress = 0 }

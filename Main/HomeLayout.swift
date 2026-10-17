@@ -106,6 +106,7 @@ struct FolderTransitionLayer: View, Animatable {
     var open: (Int, CGRect) -> Void
     var close: () -> Void
     var editing: Bool
+    var blankTap: () -> Void
     var prepareLift: () -> Void
     var beginLift: (Int) -> Void
     var draggingSlot: Int?
@@ -122,10 +123,11 @@ struct FolderTransitionLayer: View, Animatable {
         let panel = interpolatedRect(source, metrics.folderRect, t)
         let nameOpacity = min(1, max(0, (t - 0.55) / 0.45))
         ZStack(alignment: .topLeading) {
-            Color.clear.contentShape(Rectangle()).onTapGesture(perform: close)
+            Color.clear.contentShape(Rectangle()).onTapGesture { if editing { blankTap() } else { close() } }
             Color.clear.frame(width: panel.width, height: panel.height)
                 .homeGlass(source.width * 0.24 + (metrics.size.width * 0.10 - source.width * 0.24) * t)
                 .opacity(item.isFolder ? 1 : t)
+                .onTapGesture(perform: blankTap)
                 .position(x: panel.midX, y: panel.midY)
             // Pages retain the 3 x 3 layout used by SpringBoard folders.
             if item.slots.count <= 9 {
@@ -170,6 +172,7 @@ struct FolderTransitionLayer: View, Animatable {
                     .frame(width: metrics.cell, height: metrics.labelHeight)
                     .offset(y: rect.height + metrics.labelGap).opacity(opacity)
             }.frame(width: rect.width, height: rect.height)
+                .modifier(EditingWiggle(active: editing && draggingSlot != slot, seed: slot))
         }.buttonStyle(IconPressStyle()).accessibilityLabel("アプリ \(slot)")
             .opacity(draggingSlot == slot ? 0 : 1)
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.22, maximumDistance: 12)
@@ -196,7 +199,6 @@ struct FolderTransitionLayer: View, Animatable {
                         .accessibilityLabel("アプリ \(slot) をフォルダから取り出す")
                 }
             }
-            .modifier(EditingWiggle(active: editing && draggingSlot != slot, seed: slot))
             .position(x: rect.midX, y: rect.midY)
     }
 }

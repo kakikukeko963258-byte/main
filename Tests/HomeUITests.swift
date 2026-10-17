@@ -3,6 +3,7 @@ import XCTest
 final class HomeUITests: XCTestCase {
     @MainActor
     func testHomeAndFolderNavigation() {
+        executionTimeAllowance = 180
         let app = XCUIApplication()
         app.launchArguments = ["-reset-home"]
         app.launch()
@@ -37,13 +38,21 @@ final class HomeUITests: XCTestCase {
         moveSource.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.38))
             .press(forDuration: 0.45, thenDragTo: moveTarget.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.38)))
         XCTAssertTrue(app.buttons["完了"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["ホーム画面を編集"].exists)
         app.buttons["完了"].tap()
+        XCTAssertFalse(app.buttons["完了"].exists)
+        let stopped = app.buttons["アプリ 14"].frame
+        Thread.sleep(forTimeInterval: 0.35)
+        XCTAssertEqual(app.buttons["アプリ 14"].frame.minX, stopped.minX, accuracy: 0.1)
         XCTAssertEqual(app.buttons["アプリ 13"].frame.minY, targetY, accuracy: 3)
         XCTAssertEqual(app.buttons["アプリ 14"].frame.midX, shiftedX, accuracy: 3)
         XCTAssertEqual(app.buttons["アプリ 14"].frame.minY, shiftedY, accuracy: 3)
         capture("04-moved-icon")
         app.buttons["ナビゲーション、5個のアプリ"].tap()
         app.buttons["アプリ 3"].press(forDuration: 0.28)
+        XCTAssertTrue(app.buttons["ホーム画面を編集"].waitForExistence(timeout: 5))
+        capture("08-long-press-menu")
+        app.buttons["ホーム画面を編集"].tap()
         for slot in 3...6 {
             let remove = app.buttons["アプリ \(slot) をフォルダから取り出す"]
             XCTAssertTrue(remove.waitForExistence(timeout: 5))
@@ -56,6 +65,14 @@ final class HomeUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["アプリ 7"].waitForExistence(timeout: 10))
         app.buttons["アプリ 7"].press(forDuration: 0.28)
+        app.buttons["ホーム画面を編集"].tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.78)).tap()
+        XCTAssertFalse(app.buttons["完了"].exists)
+        let still = app.buttons["アプリ 7"].frame
+        Thread.sleep(forTimeInterval: 0.35)
+        XCTAssertEqual(app.buttons["アプリ 7"].frame.minX, still.minX, accuracy: 0.1)
+        app.buttons["アプリ 7"].press(forDuration: 0.28)
+        app.buttons["ホーム画面を編集"].tap()
         let removeHome = app.buttons["7をホーム画面から取り除く"]
         XCTAssertTrue(removeHome.waitForExistence(timeout: 5))
         capture("06-edit-minus")
