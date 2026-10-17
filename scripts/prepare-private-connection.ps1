@@ -35,6 +35,9 @@ try {
         try { $bytes = [IO.File]::ReadAllBytes($temporarySetup); $stream.Write($bytes, 0, $bytes.Length) }
         finally { $stream.Dispose() }
     } finally { $archive.Dispose() }
+    $python = (Get-Command python -ErrorAction Stop).Source
+    & $python (Join-Path $PSScriptRoot 'prepare-file-provider-signing.py') $destination
+    if ($LASTEXITCODE -ne 0) { throw 'Files拡張の署名先設定を用意できませんでした。' }
     $completed = $true
     Write-Output '初回設定付きIPAをAltForge Remoteの許可済み一覧に用意しました。'
 } finally {
