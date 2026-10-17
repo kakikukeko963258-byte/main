@@ -7,7 +7,13 @@ import ImageIO
 enum IconArtwork {
     private static let cache = NSCache<NSString, UIImage>()
     static func image(_ slot: Int) -> UIImage {
-        let key = "slot-\(slot)" as NSString
+        artwork(slot, square: false)
+    }
+    static func transitionImage(_ slot: Int) -> UIImage {
+        artwork(slot, square: true)
+    }
+    private static func artwork(_ slot: Int, square: Bool) -> UIImage {
+        let key = "\(square ? "window" : "slot")-\(slot)" as NSString
         if let image = cache.object(forKey: key) { return image }
         let side: CGFloat = 256
         let format = UIGraphicsImageRendererFormat()
@@ -19,15 +25,17 @@ enum IconArtwork {
             let hues: [CGFloat] = [0.58, 0.48, 0.35, 0.08, 0.66, 0.97, 0.12, 0.56]
             let hue = hues[(slot - 1) % hues.count]
             context.saveGState()
-            context.addPath(path); context.clip()
+            if !square { context.addPath(path); context.clip() }
             let colors = [UIColor(hue: hue, saturation: 0.60, brightness: 0.77, alpha: 1).cgColor,
                           UIColor(hue: hue, saturation: 0.85, brightness: 0.43, alpha: 1).cgColor] as CFArray
             if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
                 context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: side, y: side), options: [])
             }
             context.restoreGState()
-            context.addPath(path); context.setStrokeColor(UIColor.white.withAlphaComponent(0.30).cgColor)
-            context.setLineWidth(1.3); context.strokePath()
+            if !square {
+                context.addPath(path); context.setStrokeColor(UIColor.white.withAlphaComponent(0.30).cgColor)
+                context.setLineWidth(1.3); context.strokePath()
+            }
             let font = UIFont.systemFont(ofSize: side * 0.44, weight: .medium)
             let rounded = UIFont(descriptor: font.fontDescriptor.withDesign(.rounded) ?? font.fontDescriptor, size: font.pointSize)
             let attributes: [NSAttributedString.Key: Any] = [.font: rounded, .foregroundColor: UIColor.white]

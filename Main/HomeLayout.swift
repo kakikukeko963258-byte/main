@@ -272,7 +272,9 @@ final class AppWindowView: UIView {
         host.view.insetsLayoutMarginsFromSafeArea = false
         if #available(iOS 16.4, *) { host.safeAreaRegions = [] }
         surface.addSubview(host.view)
-        icon.image = IconArtwork.image(page.slot)
+        // The moving mask supplies the contour; a baked-in transparent squircle
+        // would retain its old curve while the window changes shape.
+        icon.image = IconArtwork.transitionImage(page.slot)
         // Both axes follow the evolving window. Preserve neither the square
         // source aspect ratio nor a uniform scale during the crossfade.
         icon.contentMode = .scaleToFill
