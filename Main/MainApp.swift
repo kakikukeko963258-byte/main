@@ -467,6 +467,9 @@ struct HomeView: View {
                         finishMove(item)
                     } else { cancelLift() }
                 })
+            .modifier(EditingWiggle(active: editing && draggedItem?.id != item.id,
+                                    seed: item.slots.first ?? 0,
+                                    anchor: UnitPoint(x: 0.5, y: metrics.icon / (2 * metrics.tileHeight))))
     }
     private func beginHomeLift(_ item: HomeItem, rect: CGRect) {
         guard liftKey == nil else { return }

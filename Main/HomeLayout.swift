@@ -196,6 +196,7 @@ struct FolderTransitionLayer: View, Animatable {
                         .accessibilityLabel("アプリ \(slot) をフォルダから取り出す")
                 }
             }
+            .modifier(EditingWiggle(active: editing && draggingSlot != slot, seed: slot))
             .position(x: rect.midX, y: rect.midY)
     }
 }
