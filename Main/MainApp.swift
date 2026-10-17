@@ -175,7 +175,6 @@ struct IconPressStyle: ButtonStyle {
 
 struct HomeView: View {
     @StateObject private var store = HomeStore()
-    @Namespace private var appZoomNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var folderID: String?
@@ -183,8 +182,8 @@ struct HomeView: View {
     @State private var folderSource = CGRect.zero
     @State private var removalItem: HomeItem?
     @State private var selectedSlot: Int?
-    @State private var nativeZoomSource = false
     @State private var appProgress: CGFloat = 0
+    @State private var appInteracting = false
     @State private var appSource = CGRect.zero
     @State private var screenSize = CGSize(width: 390, height: 844)
     @State private var safeTop: CGFloat = 47
@@ -215,21 +214,8 @@ struct HomeView: View {
     private var folderMotion: Animation { reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.42, dampingFraction: 0.88) }
     private var appMotion: Animation { reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.45, dampingFraction: 0.90) }
     private var wallpaperURL: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("wallpaper.jpg") }
-    private var usesNativeZoom: Bool {
-        if #available(iOS 18.0, *) { return nativeZoomSource }
-        return false
-    }
-    private var nativeZoomPresented: Binding<Bool> {
-        Binding(get: {
-            usesNativeZoom && selectedSlot != nil
-        }, set: { presented in
-            guard !presented else { return }
-            if usesNativeZoom { selectedSlot = nil }
-        })
-    }
 
     var body: some View {
-        NavigationStack {
         GeometryReader { geometry in
             let metrics = HomeMetrics(size: geometry.size, homeOffset: (safeTop - safeBottom) / 2)
             ZStack(alignment: .topLeading) {
@@ -249,13 +235,17 @@ struct HomeView: View {
                     .accessibilityHidden(selectedSlot != nil)
                     .zIndex(2)
                 }
-                if let slot = selectedSlot, !usesNativeZoom {
-                    AppTransitionLayer(progress: reduceMotion ? 1 : appProgress, animated: !reduceMotion, slot: slot,
+                if let slot = selectedSlot {
+                    AppTransitionLayer(progress: reduceMotion ? 1 : appProgress, animated: !reduceMotion, interactive: appInteracting, slot: slot,
                                        source: appSource, size: geometry.size, safeTop: safeTop, wallpaper: wallpaper,
                                        close: closeApp,
-                                       dragChanged: { amount in appProgress = 1 - min(0.55, max(0, amount / geometry.size.height)) },
+                                       dragChanged: { amount in
+                                           appInteracting = true
+                                           appProgress = 1 - min(0.55, max(0, amount / geometry.size.height))
+                                       },
                                        dragEnded: { dismiss in
-                        if dismiss { closeApp() } else { withAnimation(appMotion) { appProgress = 1 } }
+                        appInteracting = false
+                        if dismiss { closeApp() } else { appProgress = 1 }
                     })
                     .opacity(reduceMotion ? appProgress : 1).zIndex(3)
                 }
@@ -310,24 +300,6 @@ struct HomeView: View {
                 .onChange(of: geometry.size) { screenSize = $0 }
         }
         .ignoresSafeArea()
-        .toolbar(.hidden, for: .navigationBar)
-        .navigationDestination(isPresented: nativeZoomPresented) {
-            if let slot = selectedSlot {
-                if #available(iOS 18.0, *) {
-                    SlotPage(slot: slot, wallpaper: wallpaper, safeTop: safeTop,
-                             close: closeApp, dragChanged: { _ in }, dragEnded: { _ in }, nativeZoom: true)
-                        .ignoresSafeArea()
-                        .navigationBarBackButtonHidden(true)
-                        .toolbar(slot == 1 ? .visible : .hidden, for: .navigationBar)
-                        .navigationTransition(.zoom(sourceID: slot, in: appZoomNamespace))
-                } else {
-                    SlotPage(slot: slot, wallpaper: wallpaper, safeTop: safeTop,
-                             close: closeApp, dragChanged: { _ in }, dragEnded: { _ in }, nativeZoom: false)
-                }
-            }
-        }
-        }
-        .ignoresSafeArea()
         .onChange(of: scenePhase) { phase in
             if phase != .active {
                 finishEditing()
@@ -378,7 +350,7 @@ struct HomeView: View {
         var displayItem = item
         displayItem.slots = folderPreview ?? item.slots
         return FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
-            item: displayItem, source: folderSource, metrics: metrics, zoomNamespace: appZoomNamespace, name: $folderName,
+            item: displayItem, source: folderSource, metrics: metrics, name: $folderName,
             open: { slot, rect in open(slot, source: rect) }, close: closeFolder,
             editing: editing, blankTap: finishEditing,
             prepareLift: { liftFeedback.prepare() },
@@ -496,10 +468,7 @@ struct HomeView: View {
             VStack(spacing: metrics.labelGap) {
                 Group {
                     if item.isFolder { FolderIcon(item: item) }
-                    else {
-                        SlotIcon(slot: item.slots[0]).frame(width: metrics.icon, height: metrics.icon)
-                            .appZoomSource(id: item.slots[0], namespace: appZoomNamespace)
-                    }
+                    else { SlotIcon(slot: item.slots[0]) }
                 }.frame(width: metrics.icon, height: metrics.icon)
                     .overlay(IconContour().stroke(.white.opacity(hoveredID == item.id ? 0.8 : 0), lineWidth: 2))
                 Text(item.displayName).font(.system(size: metrics.label)).lineLimit(1)
@@ -631,28 +600,25 @@ struct HomeView: View {
             page = min(max(0, page + direction), max(0, (store.items.count - 1) / 24))
         }
     }
-    private func open(_ slot: Int, source: CGRect, nativeSource: Bool = true) {
+    private func open(_ slot: Int, source: CGRect) {
         guard !editing && Date() > suppressTapUntil else { return }
         iconMenu = nil
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         appSource = source
+        appInteracting = false
         appProgress = 0
-        nativeZoomSource = nativeSource
-        if usesNativeZoom {
-            selectedSlot = slot
-        } else {
-            selectedSlot = slot
-            DispatchQueue.main.async { withAnimation(appMotion) { appProgress = 1 } }
+        selectedSlot = slot
+        DispatchQueue.main.async {
+            if reduceMotion { withAnimation(appMotion) { appProgress = 1 } }
+            else { appProgress = 1 }
         }
     }
     private func closeApp() {
-        if usesNativeZoom {
-            selectedSlot = nil
-        } else {
-            withAnimation(appMotion) { appProgress = 0 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.52) {
-                if appProgress == 0 { selectedSlot = nil }
-            }
+        appInteracting = false
+        if reduceMotion { withAnimation(appMotion) { appProgress = 0 } }
+        else { appProgress = 0 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.52) {
+            if appProgress == 0 { selectedSlot = nil }
         }
     }
     private func closeFolder() {
@@ -671,9 +637,9 @@ struct HomeView: View {
                     ForEach((1...32).filter { query.isEmpty || String($0).contains(query) }, id: \.self) { slot in
                         Button {
                             showSearch = false
-                            open(slot, source: CGRect(x: screenSize.width / 2 - 30, y: screenSize.height / 2 - 30, width: 60, height: 60), nativeSource: false)
+                            open(slot, source: CGRect(x: screenSize.width / 2 - 30, y: screenSize.height / 2 - 30, width: 60, height: 60))
                         } label: {
-                            VStack { SlotIcon(slot: slot).frame(width: 60, height: 60).appZoomSource(id: slot, namespace: appZoomNamespace); Text("\(slot)") }
+                            VStack { SlotIcon(slot: slot).frame(width: 60, height: 60); Text("\(slot)") }
                         }.buttonStyle(IconPressStyle()).accessibilityLabel("検索アプリ \(slot)")
                             .contextMenu {
                                 if store.hiddenSlots.contains(slot) {
@@ -705,7 +671,6 @@ struct SlotPage: View {
     let close: () -> Void
     let dragChanged: (CGFloat) -> Void
     let dragEnded: (Bool) -> Void
-    let nativeZoom: Bool
     var body: some View {
         if slot == 1 {
             PCFileBridgeView(onHome: close)
@@ -713,13 +678,13 @@ struct SlotPage: View {
                 .padding(.bottom, 16)
                 .background(Color(uiColor: .systemGroupedBackground))
                 .simultaneousGesture(DragGesture().onChanged { value in
-                    if !nativeZoom && value.startLocation.x < 24 && value.translation.width > abs(value.translation.height) {
+                    if value.startLocation.x < 24 && value.translation.width > abs(value.translation.height) {
                         dragChanged(max(0, value.translation.width))
                     }
                 }.onEnded { value in
-                    guard !nativeZoom && value.startLocation.x < 24 else { return }
+                    guard value.startLocation.x < 24 else { return }
                     dragEnded(value.translation.width > 100 || value.predictedEndTranslation.width > 220)
-                }, including: nativeZoom ? .subviews : .all)
+                })
         } else {
             ZStack {
                 Wallpaper(image: wallpaper)
@@ -741,18 +706,16 @@ struct SlotPage: View {
                 }
             }.foregroundStyle(.white)
                 .gesture(DragGesture().onChanged { value in
-                    guard !nativeZoom else { return }
                     if value.startLocation.x < 40 {
                         dragChanged(max(0, value.translation.width))
                     } else if value.translation.height > abs(value.translation.width) {
                         dragChanged(max(0, value.translation.height))
                     }
                 }.onEnded { value in
-                    guard !nativeZoom else { return }
                     let distance = value.startLocation.x < 40 ? value.translation.width : value.translation.height
                     let predicted = value.startLocation.x < 40 ? value.predictedEndTranslation.width : value.predictedEndTranslation.height
                     dragEnded(distance > 100 || predicted > 220)
-                }, including: nativeZoom ? .subviews : .all)
+                })
         }
     }
 }

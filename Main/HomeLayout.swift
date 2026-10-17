@@ -1,16 +1,5 @@
 import SwiftUI
 
-extension View {
-    @ViewBuilder
-    func appZoomSource(id: Int, namespace: Namespace.ID) -> some View {
-        if #available(iOS 18.0, *) {
-            matchedTransitionSource(id: id, in: namespace)
-        } else {
-            self
-        }
-    }
-}
-
 // Measurements from the supplied 947 x 2048 reference, in full-screen coordinates.
 // The source file is higher resolution; all values are normalized to this canvas.
 struct HomeMetrics {
@@ -113,7 +102,6 @@ struct FolderTransitionLayer: View, Animatable {
     let item: HomeItem
     let source: CGRect
     let metrics: HomeMetrics
-    let zoomNamespace: Namespace.ID
     @Binding var name: String
     var open: (Int, CGRect) -> Void
     var close: () -> Void
@@ -180,7 +168,6 @@ struct FolderTransitionLayer: View, Animatable {
         Button { open(slot, metrics.folderIconRect((item.slots.firstIndex(of: slot) ?? 0) % 9)) } label: {
             ZStack(alignment: .top) {
                 SlotIcon(slot: slot).frame(width: rect.width, height: rect.height)
-                    .appZoomSource(id: slot, namespace: zoomNamespace)
                 Text("\(slot)").font(.system(size: metrics.label))
                     .frame(width: metrics.cell, height: metrics.labelHeight)
                     .offset(y: rect.height + metrics.labelGap).opacity(opacity)
@@ -217,6 +204,7 @@ struct FolderTransitionLayer: View, Animatable {
 struct AppTransitionLayer: UIViewControllerRepresentable {
     var progress: CGFloat
     let animated: Bool
+    let interactive: Bool
     let slot: Int
     let source: CGRect
     let size: CGSize
@@ -228,11 +216,11 @@ struct AppTransitionLayer: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> AppWindowController {
         let page = SlotPage(slot: slot, wallpaper: wallpaper, safeTop: safeTop,
-                            close: close, dragChanged: dragChanged, dragEnded: dragEnded, nativeZoom: false)
+                            close: close, dragChanged: dragChanged, dragEnded: dragEnded)
         return AppWindowController(page: page, size: size, source: source)
     }
     func updateUIViewController(_ controller: AppWindowController, context: Context) {
-        controller.windowView.setProgress(progress, animated: animated && context.transaction.animation != nil)
+        controller.windowView.setProgress(progress, animated: animated && !interactive)
     }
 }
 
@@ -257,11 +245,16 @@ final class AppWindowView: UIView {
     fileprivate let host: UIHostingController<SlotPage>
     private let surface = UIView()
     private let icon = UIImageView()
+    private let contourMask = CAShapeLayer()
     private let pageSize: CGSize
     private let source: CGRect
     private var capture: UIView?
-    private var animator: UIViewPropertyAnimator?
+    private var displayLink: CADisplayLink?
     private var currentProgress: CGFloat = 0
+    private var targetProgress: CGFloat = 0
+    private var animationFrom: CGFloat = 0
+    private var animationStarted: CFTimeInterval = 0
+    private var animationDuration: CFTimeInterval = 0.46
 
     init(page: SlotPage, size: CGSize, source: CGRect) {
         host = UIHostingController(rootView: page)
@@ -269,9 +262,10 @@ final class AppWindowView: UIView {
         self.source = source
         super.init(frame: CGRect(origin: .zero, size: size))
         backgroundColor = .clear
-        surface.frame = CGRect(origin: .zero, size: size)
-        surface.layer.cornerCurve = .continuous
-        surface.clipsToBounds = true
+        surface.frame = bounds
+        contourMask.frame = surface.bounds
+        contourMask.fillColor = UIColor.black.cgColor
+        contourMask.contentsScale = UIScreen.main.scale
         addSubview(surface)
         host.view.backgroundColor = .clear
         host.view.frame = surface.bounds
@@ -279,6 +273,8 @@ final class AppWindowView: UIView {
         if #available(iOS 16.4, *) { host.safeAreaRegions = [] }
         surface.addSubview(host.view)
         icon.image = IconArtwork.image(page.slot)
+        // Both axes follow the evolving window. Preserve neither the square
+        // source aspect ratio nor a uniform scale during the crossfade.
         icon.contentMode = .scaleToFill
         icon.frame = surface.bounds
         icon.isUserInteractionEnabled = false
@@ -286,68 +282,90 @@ final class AppWindowView: UIView {
         apply(0)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    deinit { displayLink?.invalidate() }
 
     func setProgress(_ progress: CGFloat, animated: Bool) {
         let t = min(1, max(0, progress))
-        guard t != currentProgress else { return }
-        let startProgress = currentProgress
-        currentProgress = t
-        animator?.stopAnimation(true)
+        if animated && t == targetProgress && displayLink != nil { return }
+        if t == currentProgress && displayLink == nil { targetProgress = t; return }
+        displayLink?.invalidate()
+        displayLink = nil
+        targetProgress = t
         if capture == nil {
-            // Capture before changing transforms, once per opening/closing gesture.
             host.view.layoutIfNeeded()
             if let snapshot = host.view.snapshotView(afterScreenUpdates: true) {
                 snapshot.frame = CGRect(origin: .zero, size: pageSize)
-                snapshot.alpha = startProgress == 1 ? 1 : 0
+                let blend = min(1, max(0, (currentProgress - 0.04) / 0.26))
+                snapshot.alpha = blend * blend * (3 - 2 * blend)
                 surface.insertSubview(snapshot, belowSubview: icon)
                 capture = snapshot
                 host.view.isHidden = true
             }
         }
-        let changes = { self.apply(t) }
-        let completion: (UIViewAnimatingPosition) -> Void = { [weak self] position in
-            guard let self, position == .end, self.currentProgress == 1 else { return }
-            self.host.view.isHidden = false
-            self.capture?.removeFromSuperview()
-            self.capture = nil
-            self.animator = nil
-        }
         if animated {
-            // Fade the page and icon in the same animator as the window so the
-            // two directions switch at the same transition progress.
-            let animation = UIViewPropertyAnimator(duration: 0.45, dampingRatio: 0.90, animations: changes)
-            animation.addCompletion(completion)
-            animator = animation
-            animation.startAnimation()
+            animationFrom = currentProgress
+            animationStarted = CACurrentMediaTime()
+            animationDuration = 0.46 * max(0.38, Double(abs(t - currentProgress)))
+            let clock = WindowAnimationClock(owner: self)
+            let link = CADisplayLink(target: clock, selector: #selector(WindowAnimationClock.tick(_:)))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+            displayLink = link
+            link.add(to: .main, forMode: .common)
         } else {
-            changes()
-            completion(.end)
+            currentProgress = t
+            apply(t)
+            finishIfExpanded()
         }
+    }
+    fileprivate func advance(_ timestamp: CFTimeInterval) {
+        let u = min(1, max(0, (timestamp - animationStarted) / animationDuration))
+        // Fast expansion followed by a gentle settle, using the same curve in
+        // reverse for closing. Only cached surfaces and their mask are updated.
+        let eased = CGFloat(1 - pow(1 - u, 3.3))
+        currentProgress = animationFrom + (targetProgress - animationFrom) * eased
+        apply(currentProgress)
+        if u >= 1 {
+            displayLink?.invalidate()
+            displayLink = nil
+            currentProgress = targetProgress
+            apply(currentProgress)
+            finishIfExpanded()
+        }
+    }
+    private func finishIfExpanded() {
+        guard currentProgress == 1 else { return }
+        host.view.isHidden = false
+        capture?.removeFromSuperview()
+        capture = nil
     }
     private func apply(_ t: CGFloat) {
         let rect = interpolatedRect(source, CGRect(origin: .zero, size: pageSize), t)
-        surface.transform = CGAffineTransform(scaleX: rect.width / pageSize.width,
-                                              y: rect.height / pageSize.height)
-        surface.center = CGPoint(x: rect.midX, y: rect.midY)
-        // Keep the visible corner radius on the screen moving linearly toward
-        // the icon. `cornerRadius` lives in the unscaled surface's coordinates,
-        // so compensate for the surface transform; otherwise it stays too round
-        // through most of the shrink and suddenly loses its corner at the end.
-        let scale = max(0.001, rect.width / pageSize.width)
-        let iconCornerOnScreen = source.width * 0.24
-        surface.layer.cornerRadius = min(pageSize.width / 2,
-                                         iconCornerOnScreen * (1 - t) / scale)
-        // Use one progress range in both directions: the icon remains visible
-        // through the first part of opening and returns at the matching point
-        // while closing.
-        setOpacity(for: t)
-    }
-    private func setOpacity(for t: CGFloat) {
-        let start: CGFloat = 0.04
-        let duration: CGFloat = 0.26
-        let blend = min(1, max(0, (t - start) / duration))
+        let sx = max(0.001, rect.width / pageSize.width)
+        let sy = max(0.001, rect.height / pageSize.height)
+        // At zero, half the icon width yields the exact fourth-order icon
+        // contour. As the window lengthens, its corners become local corners
+        // rather than an enlarged ellipse stretching over the whole screen.
+        let corner = source.width / 2 + (pageSize.width * 0.12 - source.width / 2) * t
+        var inverseScale = CGAffineTransform(scaleX: 1 / sx, y: 1 / sy)
+        let path = WindowContour(corner: corner).path(in: CGRect(origin: .zero, size: rect.size)).cgPath
+        let blend = min(1, max(0, (t - 0.04) / 0.26))
         let pageAlpha = blend * blend * (3 - 2 * blend)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        surface.transform = CGAffineTransform(scaleX: sx, y: sy)
+        surface.center = CGPoint(x: rect.midX, y: rect.midY)
+        contourMask.path = path.copy(using: &inverseScale)
+        surface.layer.mask = t >= 0.9999 ? nil : contourMask
         icon.alpha = 1 - pageAlpha
         capture?.alpha = pageAlpha
+        CATransaction.commit()
     }
+}
+
+// CADisplayLink retains its target; the weak owner keeps the transition view
+// releasable when its page is removed or an interactive transition is cancelled.
+private final class WindowAnimationClock: NSObject {
+    weak var owner: AppWindowView?
+    init(owner: AppWindowView) { self.owner = owner }
+    @objc func tick(_ link: CADisplayLink) { owner?.advance(link.timestamp) }
 }

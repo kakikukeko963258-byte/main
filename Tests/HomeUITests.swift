@@ -32,7 +32,7 @@ final class HomeUITests: XCTestCase {
         XCTAssertEqual(app.navigationBars.count, 0)
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
             .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
-        XCTAssertTrue(app.buttons["アプリ 32"].waitForExistence(timeout: 5), "標準ズームの戻るスワイプが動く")
+        XCTAssertTrue(app.buttons["アプリ 32"].waitForExistence(timeout: 5), "戻るスワイプが動く")
         app.buttons["アプリ 32"].tap()
         XCTAssertTrue(app.staticTexts["ページ 32"].waitForExistence(timeout: 5))
         app.buttons["ホームへ戻る"].tap()
