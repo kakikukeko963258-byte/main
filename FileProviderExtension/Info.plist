@@ -11,7 +11,18 @@
   <key>PCFileBridgeAppGroup</key><string>$(APP_GROUP)</string>
   <key>NSLocalNetworkUsageDescription</key><string>同じネットワーク上のPC File Bridgeサーバーへ接続します。</string>
   <key>NSBonjourServices</key><array><string>_pcfilebridge._tcp</string></array>
-  <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
+  <key>NSAppTransportSecurity</key><dict>
+    <key>NSAllowsLocalNetworking</key><true/>
+    <key>NSExceptionDomains</key><dict>
+      <key>10.0.0.0/8</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+      <key>172.16.0.0/12</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+      <key>192.168.0.0/16</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+      <key>100.64.0.0/10</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+      <key>169.254.0.0/16</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+      <key>fe80::/10</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+      <key>fc00::/7</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+    </dict>
+  </dict>
   <key>NSExtension</key><dict>
     <key>NSExtensionPointIdentifier</key><string>com.apple.fileprovider-nonui</string>
     <key>NSExtensionPrincipalClass</key><string>$(PRODUCT_MODULE_NAME).FileProviderExtension</string>
