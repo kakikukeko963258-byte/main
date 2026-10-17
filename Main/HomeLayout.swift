@@ -291,8 +291,7 @@ final class AppWindowView: UIView {
                 host.view.isHidden = true
             }
         }
-        let opening = t > startProgress
-        let changes = { self.apply(t, updateOpacity: !animated, opening: opening) }
+        let changes = { self.apply(t) }
         let completion: (UIViewAnimatingPosition) -> Void = { [weak self] position in
             guard let self, position == .end, self.currentProgress == 1 else { return }
             self.host.view.isHidden = false
@@ -301,10 +300,8 @@ final class AppWindowView: UIView {
             self.animator = nil
         }
         if animated {
-            // Drive the crossfade from the same progress as the window. A
-            // separate keyframe animation kept restarting as SwiftUI sent new
-            // spring values, making the icon linger before the page appeared.
-            setOpacity(for: t, opening: opening)
+            // Fade the page and icon in the same animator as the window so the
+            // two directions switch at the same transition progress.
             let animation = UIViewPropertyAnimator(duration: 0.45, dampingRatio: 0.90, animations: changes)
             animation.addCompletion(completion)
             animator = animation
@@ -314,7 +311,7 @@ final class AppWindowView: UIView {
             completion(.end)
         }
     }
-    private func apply(_ t: CGFloat, updateOpacity: Bool = true, opening: Bool = false) {
+    private func apply(_ t: CGFloat) {
         let rect = interpolatedRect(source, CGRect(origin: .zero, size: pageSize), t)
         surface.transform = CGAffineTransform(scaleX: rect.width / pageSize.width,
                                               y: rect.height / pageSize.height)
@@ -327,19 +324,17 @@ final class AppWindowView: UIView {
         let iconCornerOnScreen = source.width * 0.24
         surface.layer.cornerRadius = min(pageSize.width / 2,
                                          iconCornerOnScreen * (1 - t) / scale)
-        // Reference: retain the app until it is close to the destination icon,
-        // then crossfade the last part of the shrink. No animated blur or layout.
-        if updateOpacity { setOpacity(for: t, opening: opening) }
+        // Use one progress range in both directions: the icon remains visible
+        // through the first part of opening and returns at the matching point
+        // while closing.
+        setOpacity(for: t)
     }
-    private func setOpacity(for t: CGFloat, opening: Bool) {
-        let start: CGFloat = opening ? 0 : 0.04
-        let duration: CGFloat = opening ? 0.12 : 0.26
+    private func setOpacity(for t: CGFloat) {
+        let start: CGFloat = 0.04
+        let duration: CGFloat = 0.26
         let blend = min(1, max(0, (t - start) / duration))
         let pageAlpha = blend * blend * (3 - 2 * blend)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
         icon.alpha = 1 - pageAlpha
         capture?.alpha = pageAlpha
-        CATransaction.commit()
     }
 }
