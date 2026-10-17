@@ -336,14 +336,17 @@ final class AppWindowView: UIView {
         let rawExpansion = fromExpansion + (toExpansion - fromExpansion) * eased
         currentProgress = LaunchMorph.progress(forExpansion: rawExpansion)
         let overshoot = opening ? 0 : max(0, -rawExpansion)
-        let recoil = -overshoot * 2.4
+        // Squash vertically and spread horizontally at impact instead of only
+        // shrinking uniformly. Keep a small contraction underneath the strain.
+        let recoil = -overshoot * 0.9
+        let squash = min(0.18, overshoot * 4.2)
         let limit = source.width * 0.06
         func drift(_ distance: CGFloat) -> CGFloat {
             max(-limit, min(limit, distance * overshoot * 0.35))
         }
         let offset = CGSize(width: drift(source.midX - pageSize.width / 2),
                             height: drift(source.midY - pageSize.height / 2))
-        apply(currentProgress, recoil: recoil, recoilOffset: offset)
+        apply(currentProgress, recoil: recoil, recoilOffset: offset, recoilSquash: squash)
         if u >= 1 {
             displayLink?.invalidate()
             displayLink = nil
@@ -365,7 +368,7 @@ final class AppWindowView: UIView {
         host.view.layoutIfNeeded()
         UIAccessibility.post(notification: .screenChanged, argument: nil)
     }
-    private func apply(_ t: CGFloat, recoil: CGFloat = 0, recoilOffset: CGSize = .zero) {
+    private func apply(_ t: CGFloat, recoil: CGFloat = 0, recoilOffset: CGSize = .zero, recoilSquash: CGFloat = 0) {
         let morph = LaunchMorph(progress: t, source: source, screen: pageSize)
         let sx = max(0.001, morph.size.width / pageSize.width)
         let sy = max(0.001, morph.size.height / pageSize.height)
@@ -379,10 +382,11 @@ final class AppWindowView: UIView {
         let pageAlpha = blend * blend * (3 - 2 * blend)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let scale = 1 + recoil
-        let rebound = CGAffineTransform(a: scale, b: 0, c: 0, d: scale,
-                                       tx: morph.center.x * (1 - scale) + recoilOffset.width,
-                                       ty: morph.center.y * (1 - scale) + recoilOffset.height)
+        let scaleX = 1 + recoil + recoilSquash
+        let scaleY = 1 + recoil - recoilSquash
+        let rebound = CGAffineTransform(a: scaleX, b: 0, c: 0, d: scaleY,
+                                       tx: morph.center.x * (1 - scaleX) + recoilOffset.width,
+                                       ty: morph.center.y * (1 - scaleY) + recoilOffset.height)
         surface.layer.transform = CATransform3DConcat(morph.transform, CATransform3DMakeAffineTransform(rebound))
         contourMask.path = path.copy(using: &inverseScale)
         surface.layer.mask = t >= 0.9999 ? nil : contourMask

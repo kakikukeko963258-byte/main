@@ -37,7 +37,7 @@ struct LaunchMorph {
         .init(time: 26/60, leftTop: 0, rightTop: 390, leftBottom: 0, rightBottom: 390, top: 0, bottom: 844)
     ]
     static let openingDuration: CFTimeInterval = 0.44
-    static let closingDuration: CFTimeInterval = 0.48
+    static let closingDuration: CFTimeInterval = 0.52
     private static let sampledDuration: CGFloat = 26 / 60
 
     private static func sample(_ progress: CGFloat) -> Sample {
@@ -70,7 +70,7 @@ struct LaunchMorph {
         guard time > 0 else { return 0 }
         guard time < 1 else { return 1 }
         let damping = 0.72
-        let frequency = 8.6
+        let frequency = 8.0
         let root = sqrt(1 - damping * damping)
         func response(_ t: Double) -> Double {
             let phase = frequency * root * t
