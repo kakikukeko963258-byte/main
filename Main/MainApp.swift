@@ -316,6 +316,9 @@ struct HomeView: View {
                 if #available(iOS 18.0, *) {
                     SlotPage(slot: slot, wallpaper: wallpaper, safeTop: safeTop,
                              close: closeApp, dragChanged: { _ in }, dragEnded: { _ in }, nativeZoom: true)
+                        .ignoresSafeArea()
+                        .navigationBarBackButtonHidden(true)
+                        .toolbar(slot == 1 ? .visible : .hidden, for: .navigationBar)
                         .navigationTransition(.zoom(sourceID: slot, in: appZoomNamespace))
                 } else {
                     SlotPage(slot: slot, wallpaper: wallpaper, safeTop: safeTop,
@@ -716,7 +719,7 @@ struct SlotPage: View {
                 }.onEnded { value in
                     guard !nativeZoom && value.startLocation.x < 24 else { return }
                     dragEnded(value.translation.width > 100 || value.predictedEndTranslation.width > 220)
-                })
+                }, including: nativeZoom ? .subviews : .all)
         } else {
             ZStack {
                 Wallpaper(image: wallpaper)
@@ -749,7 +752,7 @@ struct SlotPage: View {
                     let distance = value.startLocation.x < 40 ? value.translation.width : value.translation.height
                     let predicted = value.startLocation.x < 40 ? value.predictedEndTranslation.width : value.predictedEndTranslation.height
                     dragEnded(distance > 100 || predicted > 220)
-                })
+                }, including: nativeZoom ? .subviews : .all)
         }
     }
 }
