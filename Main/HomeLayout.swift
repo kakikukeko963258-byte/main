@@ -1,5 +1,16 @@
 import SwiftUI
 
+extension View {
+    @ViewBuilder
+    func appZoomSource(id: Int, namespace: Namespace.ID) -> some View {
+        if #available(iOS 18.0, *) {
+            matchedTransitionSource(id: id, in: namespace)
+        } else {
+            self
+        }
+    }
+}
+
 // Measurements from the supplied 947 x 2048 reference, in full-screen coordinates.
 // The source file is higher resolution; all values are normalized to this canvas.
 struct HomeMetrics {
@@ -102,6 +113,7 @@ struct FolderTransitionLayer: View, Animatable {
     let item: HomeItem
     let source: CGRect
     let metrics: HomeMetrics
+    let zoomNamespace: Namespace.ID
     @Binding var name: String
     var open: (Int, CGRect) -> Void
     var close: () -> Void
@@ -168,6 +180,7 @@ struct FolderTransitionLayer: View, Animatable {
         Button { open(slot, metrics.folderIconRect((item.slots.firstIndex(of: slot) ?? 0) % 9)) } label: {
             ZStack(alignment: .top) {
                 SlotIcon(slot: slot).frame(width: rect.width, height: rect.height)
+                    .appZoomSource(id: slot, namespace: zoomNamespace)
                 Text("\(slot)").font(.system(size: metrics.label))
                     .frame(width: metrics.cell, height: metrics.labelHeight)
                     .offset(y: rect.height + metrics.labelGap).opacity(opacity)
@@ -215,7 +228,7 @@ struct AppTransitionLayer: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> AppWindowController {
         let page = SlotPage(slot: slot, wallpaper: wallpaper, safeTop: safeTop,
-                            close: close, dragChanged: dragChanged, dragEnded: dragEnded)
+                            close: close, dragChanged: dragChanged, dragEnded: dragEnded, nativeZoom: false)
         return AppWindowController(page: page, size: size, source: source)
     }
     func updateUIViewController(_ controller: AppWindowController, context: Context) {
