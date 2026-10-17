@@ -36,8 +36,8 @@ struct LaunchMorph {
         .init(time: 20/60, leftTop: 1, rightTop: 387, leftBottom: 0, rightBottom: 390, top: 2, bottom: 843),
         .init(time: 26/60, leftTop: 0, rightTop: 390, leftBottom: 0, rightBottom: 390, top: 0, bottom: 844)
     ]
-    static let openingDuration: CFTimeInterval = 0.36
-    static let closingDuration: CFTimeInterval = 0.30
+    static let openingDuration: CFTimeInterval = 0.44
+    static let closingDuration: CFTimeInterval = 0.40
     private static let sampledDuration: CGFloat = 26 / 60
 
     private static func sample(_ progress: CGFloat) -> Sample {
@@ -60,6 +60,10 @@ struct LaunchMorph {
             if (sample(mid).height - 64) / 780 < expansion { lo = mid } else { hi = mid }
         }
         return expansion <= 0 ? 0 : (expansion >= 1 ? 1 : (lo + hi) / 2)
+    }
+
+    static func expansion(at progress: CGFloat) -> CGFloat {
+        (sample(progress).height - 64) / 780
     }
 
     let transform: CATransform3D

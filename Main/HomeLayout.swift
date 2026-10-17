@@ -326,11 +326,14 @@ final class AppWindowView: UIView {
     }
     fileprivate func advance(_ timestamp: CFTimeInterval) {
         let u = min(1, max(0, (timestamp - animationStarted) / animationDuration))
-        // Keep the measured deformation, but give the beginning a small push.
-        // Closing gets a firmer start; the fully expanded idle tail is removed.
-        let power = targetProgress > animationFrom ? 1.08 : 1.25
-        let eased = CGFloat(1 - pow(1 - u, power))
-        currentProgress = animationFrom + (targetProgress - animationFrom) * eased
+        // Ease the visible expansion, not the recorded timeline: its settled
+        // tail otherwise delays the start of closing even with an ease-out.
+        // Retain the measured shape/path at every size and the shared crossfade.
+        let opening = targetProgress > animationFrom
+        let eased = CGFloat(1 - pow(1 - u, opening ? 3.0 : 2.7))
+        let fromExpansion = LaunchMorph.expansion(at: animationFrom)
+        let toExpansion = LaunchMorph.expansion(at: targetProgress)
+        currentProgress = LaunchMorph.progress(forExpansion: fromExpansion + (toExpansion - fromExpansion) * eased)
         apply(currentProgress)
         if u >= 1 {
             displayLink?.invalidate()
