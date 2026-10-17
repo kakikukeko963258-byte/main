@@ -199,7 +199,7 @@ struct FolderTransitionLayer: View, Animatable {
 
 // Keep the page at its final layout size. UIKit animates a single captured surface;
 // neither SwiftUI layout nor the live glass back button runs on every animation frame.
-struct AppTransitionLayer: UIViewRepresentable {
+struct AppTransitionLayer: UIViewControllerRepresentable {
     var progress: CGFloat
     let animated: Bool
     let slot: Int
@@ -211,18 +211,35 @@ struct AppTransitionLayer: UIViewRepresentable {
     let dragChanged: (CGFloat) -> Void
     let dragEnded: (Bool) -> Void
 
-    func makeUIView(context: Context) -> AppWindowView {
+    func makeUIViewController(context: Context) -> AppWindowController {
         let page = SlotPage(slot: slot, wallpaper: wallpaper, safeTop: safeTop,
                             close: close, dragChanged: dragChanged, dragEnded: dragEnded)
-        return AppWindowView(page: page, size: size, source: source)
+        return AppWindowController(page: page, size: size, source: source)
     }
-    func updateUIView(_ view: AppWindowView, context: Context) {
-        view.setProgress(progress, animated: animated && context.transaction.animation != nil)
+    func updateUIViewController(_ controller: AppWindowController, context: Context) {
+        controller.windowView.setProgress(progress, animated: animated && context.transaction.animation != nil)
+    }
+}
+
+// The embedded bridge uses navigation, keyboard and document pickers. Keep its
+// hosting controller in UIKit's containment tree while animating the same surface.
+final class AppWindowController: UIViewController {
+    let windowView: AppWindowView
+
+    init(page: SlotPage, size: CGSize, source: CGRect) {
+        windowView = AppWindowView(page: page, size: size, source: source)
+        super.init(nibName: nil, bundle: nil)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func loadView() {
+        addChild(windowView.host)
+        view = windowView
+        windowView.host.didMove(toParent: self)
     }
 }
 
 final class AppWindowView: UIView {
-    private let host: UIHostingController<SlotPage>
+    fileprivate let host: UIHostingController<SlotPage>
     private let surface = UIView()
     private let icon = UIImageView()
     private let pageSize: CGSize
