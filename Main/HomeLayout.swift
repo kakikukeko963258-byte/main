@@ -106,7 +106,8 @@ struct FolderTransitionLayer: View, Animatable {
     var open: (Int, CGRect) -> Void
     var close: () -> Void
     var editing: Bool
-    var beginEditing: () -> Void
+    var prepareLift: () -> Void
+    var beginLift: (Int) -> Void
     var draggingSlot: Int?
     var dragChanged: (Int, CGSize) -> Void
     var dragEnded: (Int, CGSize) -> Void
@@ -171,17 +172,19 @@ struct FolderTransitionLayer: View, Animatable {
             }.frame(width: rect.width, height: rect.height)
         }.buttonStyle(IconPressStyle()).accessibilityLabel("アプリ \(slot)")
             .opacity(draggingSlot == slot ? 0 : 1)
-            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35)
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.22, maximumDistance: 12)
+                .onChanged { _ in prepareLift() }
+                .onEnded { recognized in if recognized { beginLift(slot) } }
                 .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("home")))
                 .onChanged { value in
                     switch value {
                     case .second(true, let drag):
-                        beginEditing()
+                        beginLift(slot)
                         if let drag { dragChanged(slot, drag.translation) }
                     default: break
                     }
                 }.onEnded { value in
-                    if case .second(true, let drag) = value, let drag { dragEnded(slot, drag.translation) }
+                    if case .second(true, let drag) = value { dragEnded(slot, drag?.translation ?? .zero) }
                 })
             .overlay(alignment: .topLeading) {
                 if editing {
@@ -283,13 +286,13 @@ final class AppWindowView: UIView {
             host.view.layoutIfNeeded()
             if let snapshot = host.view.snapshotView(afterScreenUpdates: true) {
                 snapshot.frame = CGRect(origin: .zero, size: pageSize)
-                snapshot.alpha = startProgress
+                snapshot.alpha = startProgress == 1 ? 1 : 0
                 surface.insertSubview(snapshot, belowSubview: icon)
                 capture = snapshot
                 host.view.isHidden = true
             }
         }
-        let changes = { self.apply(t) }
+        let changes = { self.apply(t, updateOpacity: !animated) }
         let completion: (UIViewAnimatingPosition) -> Void = { [weak self] position in
             guard let self, position == .end, self.currentProgress == 1 else { return }
             self.host.view.isHidden = false
@@ -301,20 +304,37 @@ final class AppWindowView: UIView {
             let animation = UIViewPropertyAnimator(duration: 0.45, dampingRatio: 0.90, animations: changes)
             animation.addCompletion(completion)
             animator = animation
+            let closing = t < startProgress
+            // Alpha timing is separate from the window spring. Evaluating an
+            // easing formula only at the endpoints would fade for the full move.
+            UIView.animateKeyframes(withDuration: 0.45, delay: 0,
+                                    options: [.beginFromCurrentState, .allowUserInteraction]) {
+                UIView.addKeyframe(withRelativeStartTime: closing ? 0.62 : 0,
+                                   relativeDuration: closing ? 0.30 : 0.24) {
+                    self.icon.alpha = closing ? 1 : 0
+                    self.capture?.alpha = closing ? 0 : 1
+                }
+            }
             animation.startAnimation()
         } else {
             changes()
             completion(.end)
         }
     }
-    private func apply(_ t: CGFloat) {
+    private func apply(_ t: CGFloat, updateOpacity: Bool = true) {
         let rect = interpolatedRect(source, CGRect(origin: .zero, size: pageSize), t)
         surface.transform = CGAffineTransform(scaleX: rect.width / pageSize.width,
                                               y: rect.height / pageSize.height)
         surface.center = CGPoint(x: rect.midX, y: rect.midY)
         // A continuous corner is handled by Core Animation instead of a rebuilt path.
         surface.layer.cornerRadius = pageSize.width * 0.24 * (1 - t)
-        icon.alpha = 1 - t
-        capture?.alpha = t
+        // Reference: retain the app until it is close to the destination icon,
+        // then crossfade the last part of the shrink. No animated blur or layout.
+        let blend = min(1, max(0, (t - 0.04) / 0.26))
+        let pageAlpha = blend * blend * (3 - 2 * blend)
+        if updateOpacity {
+            icon.alpha = 1 - pageAlpha
+            capture?.alpha = pageAlpha
+        }
     }
 }

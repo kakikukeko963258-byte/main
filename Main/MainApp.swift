@@ -26,6 +26,11 @@ final class HomeStore: ObservableObject {
     @Published var items: [HomeItem] { didSet { save() } }
     @Published private(set) var hiddenSlots: [Int] = UserDefaults.standard.array(forKey: "hidden-slots") as? [Int] ?? []
     init() {
+        if ProcessInfo.processInfo.arguments.contains("-reset-home") {
+            UserDefaults.standard.removeObject(forKey: "home-layout-v2")
+            UserDefaults.standard.removeObject(forKey: "hidden-slots")
+            hiddenSlots = []
+        }
         if let data = UserDefaults.standard.data(forKey: "home-layout-v2"),
            let saved = try? JSONDecoder().decode([HomeItem].self, from: data),
            (saved.flatMap(\.slots) + (UserDefaults.standard.array(forKey: "hidden-slots") as? [Int] ?? [])).sorted() == Array(1...32) {
@@ -80,6 +85,15 @@ final class HomeStore: ObservableObject {
         if result[index].slots.count == 1 { result[index].name = "\(result[index].slots[0])" }
         result.append(HomeItem(id: UUID().uuidString, name: "\(slot)", slots: [slot]))
         items = result
+    }
+    func applyOrder(_ order: [HomeItem]) {
+        guard order.count == items.count, Set(order.map(\.id)) == Set(items.map(\.id)) else { return }
+        items = order
+    }
+    func orderSlots(_ slots: [Int], in id: String) {
+        guard let index = items.firstIndex(where: { $0.id == id }),
+              slots.sorted() == items[index].slots.sorted() else { return }
+        items[index].slots = slots
     }
     func move(source: String, target: String) {
         guard source != target, let sourceIndex = items.firstIndex(where: { $0.id == source }),
@@ -184,6 +198,11 @@ struct HomeView: View {
     @State private var folderName = ""
     @State private var editing = false
     @State private var draggedItem: HomeItem?
+    @StateObject private var liftFeedback = LiftFeedback()
+    @State private var liftKey: String?
+    @State private var dragPreview: [HomeItem]?
+    @State private var folderPreview: [Int]?
+    @State private var hoverCell: Int?
     @State private var dragOrigin = CGRect.zero
     @State private var dragTranslation = CGSize.zero
     @State private var hoveredID: String?
@@ -233,6 +252,7 @@ struct HomeView: View {
                         .shadow(color: .black.opacity(0.25), radius: 6, y: 5)
                         .position(x: dragOrigin.midX + dragTranslation.width,
                                   y: dragOrigin.midY + dragTranslation.height)
+                        .transaction { $0.animation = nil }
                         .allowsHitTesting(false).accessibilityHidden(true).zIndex(20)
                 }
                 if editing && draggedItem == nil {
@@ -258,7 +278,7 @@ struct HomeView: View {
         .ignoresSafeArea()
         .onChange(of: scenePhase) { phase in
             if phase != .active {
-                draggedItem = nil
+                cancelLift()
                 folderDraggedSlot = nil
                 hoveredID = nil
                 edgeDirection = 0
@@ -303,63 +323,72 @@ struct HomeView: View {
     }
 
     private func folderOverlay(_ item: HomeItem, id: String, metrics: HomeMetrics) -> FolderTransitionLayer {
-FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
-                                          item: item, source: folderSource, metrics: metrics, name: $folderName,
-                                          open: { slot, rect in open(slot, source: rect) }, close: closeFolder,
-                                          editing: editing, beginEditing: { editing = true },
-                                          draggingSlot: folderDraggedSlot,
-                                          dragChanged: { slot, translation in
-                        editing = true
-                        if folderDraggedSlot != slot { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
-                        folderDraggedSlot = slot
-                        draggedItem = HomeItem(id: "folder-drag", name: String(slot), slots: [slot])
-                        dragOrigin = metrics.folderIconRect((item.slots.firstIndex(of: slot) ?? 0) % 9)
-                        dragTranslation = translation
-                    }, dragEnded: { slot, translation in
-                        let origin = metrics.folderIconRect((item.slots.firstIndex(of: slot) ?? 0) % 9)
-                        let point = CGPoint(x: origin.midX + translation.width, y: origin.midY + translation.height)
-                        if !metrics.folderRect.insetBy(dx: -12, dy: -12).contains(point) {
-                            store.extract(slot, from: id)
-                            if let extracted = store.items.first(where: { $0.slots == [slot] }),
-                               let target = store.items.enumerated().first(where: { index, candidate in
-                                   index / 24 == page && candidate.id != extracted.id && metrics.iconRect(index % 24).contains(point)
-                               })?.element {
-                                store.move(source: extracted.id, target: target.id)
-                            }
-                            closeFolder()
-                        } else if let sourceIndex = item.slots.firstIndex(of: slot),
-                                  let target = item.slots.enumerated().first(where: { index, candidate in
-                                      index / 9 == sourceIndex / 9 && candidate != slot && metrics.folderIconRect(index % 9).contains(point)
-                                  })?.element {
-                            withAnimation(.easeInOut(duration: 0.18)) { store.moveSlot(slot, in: id, to: target) }
-                        }
-                        folderDraggedSlot = nil
-                        draggedItem = nil
-                        dragTranslation = .zero
-                        suppressTapUntil = Date().addingTimeInterval(0.25)
-                    },
-                                          rename: { store.rename(id, to: folderName) },
-                                          extract: { slot in
-                        withAnimation(folderMotion) { store.extract(slot, from: id) }
-                        if !store.items.contains(where: { $0.id == id && $0.isFolder }) { closeFolder() }
-                    })
+        var displayItem = item
+        displayItem.slots = folderPreview ?? item.slots
+        return FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
+            item: displayItem, source: folderSource, metrics: metrics, name: $folderName,
+            open: { slot, rect in open(slot, source: rect) }, close: closeFolder,
+            editing: editing,
+            prepareLift: { liftFeedback.prepare() },
+            beginLift: { slot in
+                guard liftKey == nil else { return }
+                liftKey = "folder-\(slot)"
+                liftFeedback.fire()
+                editing = true
+                folderDraggedSlot = slot
+                folderPreview = item.slots
+                draggedItem = HomeItem(id: "folder-drag", name: String(slot), slots: [slot])
+                dragOrigin = metrics.folderIconRect((item.slots.firstIndex(of: slot) ?? 0) % 9)
+                dragTranslation = .zero
+            },
+            draggingSlot: folderDraggedSlot,
+            dragChanged: { slot, translation in
+                dragTranslation = translation
+                let point = CGPoint(x: dragOrigin.midX + translation.width, y: dragOrigin.midY + translation.height)
+                guard var slots = folderPreview, let from = slots.firstIndex(of: slot),
+                      let to = slots.indices.first(where: { metrics.folderIconRect($0 % 9).insetBy(dx: -8, dy: -12).contains(point) }),
+                      from != to else { return }
+                slots.remove(at: from)
+                slots.insert(slot, at: to)
+                withAnimation(reorderMotion) { folderPreview = slots }
+            },
+            dragEnded: { slot, translation in
+                let point = CGPoint(x: dragOrigin.midX + translation.width, y: dragOrigin.midY + translation.height)
+                if !metrics.folderRect.insetBy(dx: -12, dy: -12).contains(point) {
+                    store.extract(slot, from: id)
+                    if let extracted = store.items.first(where: { $0.slots == [slot] }),
+                       let target = store.items.enumerated().first(where: { index, candidate in
+                           index / 24 == page && candidate.id != extracted.id && metrics.iconRect(index % 24).contains(point)
+                       })?.element {
+                        store.move(source: extracted.id, target: target.id)
+                    }
+                    closeFolder()
+                } else if let slots = folderPreview { store.orderSlots(slots, in: id) }
+                cancelLift()
+                suppressTapUntil = Date().addingTimeInterval(0.25)
+            },
+            rename: { store.rename(id, to: folderName) },
+            extract: { slot in
+                withAnimation(folderMotion) { store.extract(slot, from: id) }
+                if !store.items.contains(where: { $0.id == id && $0.isFolder }) { closeFolder() }
+            })
     }
-
+    private var reorderMotion: Animation { reduceMotion ? .linear(duration: 0.01) : .spring(response: 0.27, dampingFraction: 0.86) }
+    private var displayedItems: [HomeItem] { dragPreview ?? store.items }
     private func homePages(_ metrics: HomeMetrics) -> some View {
         ZStack {
-            HStack(spacing: 0) {
-                ForEach(0..<max(1, (store.items.count + 23) / 24), id: \.self) { pageIndex in
-                    ZStack(alignment: .topLeading) {
-                        ForEach(Array(store.items.dropFirst(pageIndex * 24).prefix(24).enumerated()), id: \.element.id) { index, item in
-                            let rect = metrics.iconRect(index)
-                            homeTile(item, metrics: metrics, rect: rect)
-                                .frame(width: metrics.cell, height: metrics.tileHeight)
-                                .position(x: rect.midX, y: rect.minY + metrics.tileHeight / 2)
-                                .opacity(draggedItem?.id == item.id || folderID == item.id || (selectedSlot.map { item.slots == [$0] } ?? false) ? 0 : 1)
-                        }
-                    }.frame(width: metrics.size.width, height: metrics.size.height).tag(pageIndex)
+            // One stable ForEach keeps the touched view alive while its slot changes,
+            // including a move across a page boundary. Only positions animate.
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(displayedItems.enumerated()), id: \.element.id) { index, item in
+                    let rect = metrics.iconRect(index % 24)
+                    homeTile(item, metrics: metrics, rect: rect)
+                        .frame(width: metrics.cell, height: metrics.tileHeight)
+                        .position(x: rect.midX + CGFloat(index / 24) * metrics.size.width,
+                                  y: rect.minY + metrics.tileHeight / 2)
+                        .opacity(draggedItem?.id == item.id || folderID == item.id || (selectedSlot.map { item.slots == [$0] } ?? false) ? 0 : 1)
                 }
-            }
+            }.frame(width: metrics.size.width, height: metrics.size.height, alignment: .topLeading)
             .offset(x: -CGFloat(page) * metrics.size.width + pagePan)
             .frame(width: metrics.size.width, height: metrics.size.height, alignment: .leading)
             .clipped().contentShape(Rectangle())
@@ -421,51 +450,75 @@ FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
                         .accessibilityLabel("\(item.displayName)をホーム画面から取り除く")
                 }
             }
-            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35)
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.22, maximumDistance: 12)
+                .onChanged { _ in liftFeedback.prepare() }
+                .onEnded { recognized in
+                    if recognized { beginHomeLift(item, rect: rect) }
+                }
                 .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("home")))
                 .onChanged { value in
-                    switch value {
-                    case .second(true, let drag):
-                        editing = true
-                        suppressTapUntil = Date().addingTimeInterval(0.8)
-                        guard let drag else { return }
-                        if draggedItem == nil {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            draggedItem = item; dragOrigin = rect
-                        }
-                        dragTranslation = drag.translation
-                        let point = CGPoint(x: rect.midX + drag.translation.width, y: rect.midY + drag.translation.height)
-                        updateEdgePaging(point, width: metrics.size.width)
-                        let target = store.items.enumerated().first { index, candidate in
-                            index / 24 == page && candidate.id != item.id && metrics.iconRect(index % 24).insetBy(dx: metrics.icon * 0.2, dy: metrics.icon * 0.2).contains(point)
-                        }?.element.id
-                        if hoveredID != target { hoveredID = target; hoverStart = Date() }
-                    default: break
+                    if case .second(true, let drag) = value {
+                        beginHomeLift(item, rect: rect)
+                        if let drag { updateHomeLift(drag.translation, metrics: metrics) }
                     }
                 }.onEnded { value in
-                    guard case .second(true, let drag) = value, let drag else {
-                        draggedItem = nil; return
-                    }
-                    finishMove(item, translation: drag.translation, origin: rect, metrics: metrics)
+                    if case .second(true, let drag) = value, let drag {
+                        updateHomeLift(drag.translation, metrics: metrics)
+                        finishMove(item)
+                    } else { cancelLift() }
                 })
     }
-    private func finishMove(_ item: HomeItem, translation: CGSize, origin: CGRect, metrics: HomeMetrics) {
-        let point = CGPoint(x: origin.midX + translation.width, y: origin.midY + translation.height)
-        if let target = store.items.enumerated().first(where: { index, candidate in
-            index / 24 == page && candidate.id != item.id && metrics.iconRect(index % 24).insetBy(dx: -12, dy: -18).contains(point)
-        })?.element {
-            withAnimation(.easeInOut(duration: 0.18)) {
-                if hoveredID == target.id && Date().timeIntervalSince(hoverStart) > 0.65 {
-                    store.merge(source: item.id, target: target.id)
-                } else { store.move(source: item.id, target: target.id) }
-            }
+    private func beginHomeLift(_ item: HomeItem, rect: CGRect) {
+        guard liftKey == nil else { return }
+        liftKey = item.id
+        liftFeedback.fire()
+        editing = true
+        suppressTapUntil = Date().addingTimeInterval(0.8)
+        draggedItem = item
+        dragOrigin = rect
+        dragTranslation = .zero
+        dragPreview = store.items
+    }
+    private func updateHomeLift(_ translation: CGSize, metrics: HomeMetrics) {
+        guard let item = draggedItem, var preview = dragPreview,
+              let from = preview.firstIndex(where: { $0.id == item.id }) else { return }
+        dragTranslation = translation
+        let point = CGPoint(x: dragOrigin.midX + translation.width, y: dragOrigin.midY + translation.height)
+        updateEdgePaging(point, width: metrics.size.width)
+        guard let local = (0..<24).first(where: { index in
+            let rect = metrics.iconRect(index)
+            return CGRect(x: rect.midX - metrics.cell / 2, y: rect.minY - 12,
+                          width: metrics.cell, height: metrics.tileHeight + 18).contains(point)
+        }) else { hoveredID = nil; hoverCell = nil; return }
+        let to = min(preview.count - 1, page * 24 + local)
+        if hoverCell != to {
+            hoverCell = to
+            hoveredID = preview[to].id == item.id ? nil : preview[to].id
+            hoverStart = Date()
         }
+        guard from != to else { return }
+        preview.remove(at: from)
+        preview.insert(item, at: to)
+        withAnimation(reorderMotion) { dragPreview = preview }
+    }
+    private func finishMove(_ item: HomeItem) {
+        if let target = hoveredID, Date().timeIntervalSince(hoverStart) > 0.65 {
+            withAnimation(reorderMotion) { store.merge(source: item.id, target: target) }
+        } else if let preview = dragPreview { store.applyOrder(preview) }
+        cancelLift()
+        suppressTapUntil = Date().addingTimeInterval(0.25)
+    }
+    private func cancelLift() {
         draggedItem = nil
+        liftKey = nil
+        folderDraggedSlot = nil
+        dragPreview = nil
+        folderPreview = nil
         dragTranslation = .zero
         hoveredID = nil
+        hoverCell = nil
         edgeDirection = 0
         pagePan = 0
-        suppressTapUntil = Date().addingTimeInterval(0.25)
     }
     private func updateEdgePaging(_ point: CGPoint, width: CGFloat) {
         let direction = point.x < 18 ? -1 : (point.x > width - 18 ? 1 : 0)
