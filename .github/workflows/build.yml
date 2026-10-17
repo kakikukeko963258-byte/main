@@ -6,7 +6,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: public-ipa
+  group: public-ipa-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
@@ -55,9 +55,11 @@ jobs:
           trap - EXIT
           xcrun xcresulttool export attachments --path TestResults.xcresult --output-path screenshots
       - uses: actions/upload-artifact@v4
+        timeout-minutes: 3
         if: always()
         with:
           name: visual-verification
+          compression-level: 0
           path: |
             screenshots/
             TestResults.xcresult
