@@ -28,6 +28,6 @@ final class RemoteProviderItem: NSObject, NSFileProviderItemProtocol {
     var documentSize: NSNumber? { remote.isDirectory ? nil : NSNumber(value: remote.size) }
     var contentModificationDate: Date? { remote.modifiedUtc }
     var itemVersion: NSFileProviderItemVersion {
-        NSFileProviderItemVersion(contentVersion: Data(remote.version.utf8), metadataVersion: Data(remote.modifiedUtc.timeIntervalSince1970.description.utf8))
+        NSFileProviderItemVersion(contentVersion: Data(remote.version.utf8), metadataVersion: Data("\(remote.modifiedUtc.timeIntervalSince1970)-readonly-\(remote.readOnly == true)".utf8))
     }
 }
