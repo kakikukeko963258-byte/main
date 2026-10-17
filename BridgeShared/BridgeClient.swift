@@ -21,6 +21,13 @@ struct BridgeClient {
         return request
     }
 
+    func checkConnection() async throws {
+        var req = try request("/api/items", query: [URLQueryItem(name: "parentId", value: "root"), URLQueryItem(name: "limit", value: "1")])
+        req.timeoutInterval = 8
+        let (data, response) = try await URLSession.shared.data(for: req)
+        try Self.validate(response, data: data)
+    }
+
     func health() async throws -> String {
         let (data, response) = try await URLSession.shared.data(for: request("/api/health"))
         try Self.validate(response, data: data)

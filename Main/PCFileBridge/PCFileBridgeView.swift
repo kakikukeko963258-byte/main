@@ -1,7 +1,10 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PCFileBridgeView: View {
     let onHome: () -> Void
+    @State private var showSetupImporter = false
+    @State private var showManualPairing = false
     @StateObject private var model = BridgeViewModel()
     @StateObject private var discovery = PCDiscovery()
     @StateObject private var changeMonitor = ChangeMonitor()
@@ -10,6 +13,15 @@ struct PCFileBridgeView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Text("初回設定後は、外出先でも保存したPCへ自動で再接続します。PCを起動し、両方のTailscaleをオンにしてください。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("初回設定を読み込む") { showSetupImporter = true }
+                    if model.canRetrySetup {
+                        Button("初回の接続を再試行") { Task { await model.retrySetup() } }.disabled(model.isWorking)
+                    }
+                }
+                if model.servers.isEmpty || showManualPairing {
                 Section("Windows PCとペアリング") {
                     TextField("PCのアドレス 例: 192.168.1.20:8765", text: $model.address)
                         .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -19,6 +31,10 @@ struct PCFileBridgeView: View {
                         if model.isWorking { ProgressView().frame(maxWidth: .infinity) }
                         else { Text("ペアリングしてFilesに追加").frame(maxWidth: .infinity) }
                     }.disabled(model.isWorking)
+                }
+
+                } else {
+                    Section { Button("別のPCを追加") { showManualPairing = true } }
                 }
 
                 Section {
@@ -41,6 +57,9 @@ struct PCFileBridgeView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(server.name).font(.headline)
                             Text(server.baseURL).font(.caption).foregroundStyle(.secondary)
+                            let status = model.connectionStates[server.id] ?? .checking
+                            Label(status.title, systemImage: status.symbol).font(.caption)
+                                .foregroundStyle(status == .connected ? Color.green : Color.secondary)
                             NavigationLink("ファイルを閲覧") {
                                 RemoteFolderView(server: server, parentId: "root", title: server.name)
                             }
@@ -69,8 +88,23 @@ struct PCFileBridgeView: View {
                 }
             }
             .task {
+                await model.prepareConnection()
                 discovery.start()
                 if scenePhase == .active { changeMonitor.start(servers: model.servers) }
+                while !Task.isCancelled {
+                    if scenePhase == .active { await model.refreshConnections() }
+                    try? await Task.sleep(nanoseconds: 10_000_000_000)
+                }
+            }
+            .fileImporter(isPresented: $showSetupImporter, allowedContentTypes: [.json]) { result in
+                do {
+                    let url = try result.get()
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 8192 else { throw SetupError.invalid }
+                    let data = try Data(contentsOf: url)
+                    Task { await model.importSetup(data) }
+                } catch { model.error = error.localizedDescription }
             }
             .onChange(of: model.servers) { servers in
                 if scenePhase == .active { changeMonitor.start(servers: servers) }

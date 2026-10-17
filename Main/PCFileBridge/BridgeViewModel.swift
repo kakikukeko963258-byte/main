@@ -11,12 +11,17 @@ final class BridgeViewModel: ObservableObject {
     @Published var isWorking = false
     @Published var message: String?
     @Published var error: String?
+    @Published var connectionStates: [String: ConnectionStatus] = [:]
+    @Published var canRetrySetup = false
+    private var preparedSetup: ConnectionSetup?
+    private var isRefreshingConnections = false
 
     init() { servers = SharedConfiguration.loadServers() }
 
-    func pair() async {
+    @discardableResult
+    func pair() async -> Bool {
         guard !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              pairingCode.count == 6 else { error = "PCのアドレスと6桁コードを入力してください。"; return }
+              pairingCode.count == 6 else { error = "PCのアドレスと6桁コードを入力してください。"; return false }
         isWorking = true; error = nil; message = nil
         defer { isWorking = false }
         do {
@@ -34,8 +39,65 @@ final class BridgeViewModel: ObservableObject {
                 throw error
             }
             address = ""; pairingCode = ""
-            message = "\(server.name)をペアリングし、Filesに追加しました。"
+            message = "\(server.name)を登録しました。次回から入力なしで再接続します。"
+            connectionStates[server.id] = .connected
+            return true
+        } catch { self.error = error.localizedDescription; return false }
+    }
+
+    func prepareConnection() async {
+        guard let url = Bundle.main.url(forResource: "PCFileBridgeSetup", withExtension: "json") else { return }
+        do {
+            // A successful setup remains valid after its short-lived code expires.
+            let data = try Data(contentsOf: url)
+            let metadata = try JSONDecoder.bridge.decode(ConnectionSetup.self, from: data)
+            if UserDefaults.standard.string(forKey: "PCFileBridge.completedSetup") == metadata.setupId { return }
+            if servers.contains(where: { $0.baseURL == BridgeClient.normalize(metadata.baseURL) }) { return }
+            let setup = try ConnectionSetup.decode(data)
+            preparedSetup = setup
+            canRetrySetup = true
+            if UserDefaults.standard.string(forKey: "PCFileBridge.attemptedSetup") != setup.setupId {
+                await retrySetup()
+            }
+        } catch { if servers.isEmpty { self.error = error.localizedDescription } }
+    }
+
+    func importSetup(_ data: Data) async {
+        do {
+            preparedSetup = try ConnectionSetup.decode(data)
+            canRetrySetup = true
+            await retrySetup()
         } catch { self.error = error.localizedDescription }
+    }
+
+    func retrySetup() async {
+        guard !isWorking, let setup = preparedSetup else { return }
+        guard setup.expiresUtc > Date() else { error = SetupError.expired.localizedDescription; return }
+        UserDefaults.standard.set(setup.setupId, forKey: "PCFileBridge.attemptedSetup")
+        address = setup.baseURL
+        pairingCode = setup.code
+        if await pair() {
+            UserDefaults.standard.set(setup.setupId, forKey: "PCFileBridge.completedSetup")
+            preparedSetup = nil
+            canRetrySetup = false
+        }
+    }
+
+    func refreshConnections() async {
+        guard !isRefreshingConnections else { return }
+        isRefreshingConnections = true
+        defer { isRefreshingConnections = false }
+        for server in servers {
+            if Task.isCancelled { return }
+            if connectionStates[server.id] == nil { connectionStates[server.id] = .checking }
+            do {
+                let client = BridgeClient(server: server, token: try SharedTokenStore.load(for: server.id))
+                try await client.checkConnection()
+                connectionStates[server.id] = .connected
+            } catch BridgeError.tokenNotFound { connectionStates[server.id] = .needsPairing }
+            catch BridgeError.http(401, _) { connectionStates[server.id] = .needsPairing }
+            catch { connectionStates[server.id] = .offline }
+        }
     }
 
     func test(_ server: SavedServer) async {

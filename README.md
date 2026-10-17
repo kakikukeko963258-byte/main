@@ -45,3 +45,10 @@ iOS 26以降は標準のLiquid Glassをフォルダと操作ボタンに使用�
 本体のBundle IDは`com.kakikukeko.main`、拡張は`com.kakikukeko.main.FileProvider`です。拡張分のApp IDも署名時に必要です。共有領域は`group.com.kakikukeko.main.pcfilebridge`を使い、AltStoreによる末尾の名前変更は署名済みプロファイルから解決します。以前の単独PC File Bridgeアプリの登録情報は引き継がず、mainで再ペアリングします。
 
 IPAには本体と拡張のApp Group宣言を仮署名で保持し、インストール時にAltForge/AltStoreがApple IDで再署名します。インストール時にはFile Provider拡張を保持してください。実機でのPCとの接続と「ファイル」からの読み書きは、再署名してインストールした端末での確認が必要です。
+
+
+## 外出先からの自動再接続
+
+PCとiPhoneで同じTailscaleをオンにすると、保存したVPNアドレスへ接続します。mainの「1」を開くと保存済みの接続情報で認証を確認し、切断中も情報を消さずに再試行します。初回登録後はアドレスとコードの入力欄を隠し、別のPCを追加するときだけ表示します。
+
+`PCFileBridgeSetup.json`を「初回設定を読み込む」から取り込めます。設定は期限付きの初回コードとPCのプライベートアドレスだけを含み、長期トークンはペアリング後に保護された共有領域へ保存します。`scripts/prepare-private-connection.ps1`で、改造版AltForgeへの配布直前に初回設定をIPAへ加えることもできます。この個別設定済みIPAは許可済みのローカルフォルダーだけに保存し、公開ArtifactやGitHub Releasesには送信しません。期限切れの場合はPCで設定を更新してください。
