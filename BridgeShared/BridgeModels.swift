@@ -64,7 +64,11 @@ enum BridgeConstants {
     // authorized group, and let iOS validate the container membership.
     static let appGroup: String = {
         let configured = Bundle.main.object(forInfoDictionaryKey: "PCFileBridgeAppGroup") as? String ?? "group.com.kakikukeko.main.pcfilebridge"
-        let candidates = [configured] + provisionedGroups().filter { $0.hasPrefix(configured + ".") }
+        let base = "group.com.kakikukeko.main.pcfilebridge"
+        let authorized = (Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? provisionedGroups())
+            .filter { $0 == base || $0.hasPrefix(base + ".") }
+        let candidates = authorized.isEmpty ? [configured] :
+            authorized.sorted { ($0 == configured ? 0 : 1) < ($1 == configured ? 0 : 1) }
         return candidates.first { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) != nil } ?? configured
     }()
 

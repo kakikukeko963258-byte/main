@@ -5,14 +5,22 @@ enum SharedConfiguration {
     private static var serversFile: URL? { container?.appendingPathComponent("servers.json") }
 
     static func loadServers() -> [SavedServer] {
-        guard let file = serversFile, let data = try? Data(contentsOf: file) else { return [] }
-        return (try? JSONDecoder.bridge.decode([SavedServer].self, from: data)) ?? []
+        if let file = serversFile, let data = try? Data(contentsOf: file),
+           let servers = try? JSONDecoder.bridge.decode([SavedServer].self, from: data) { return servers }
+        guard !Bundle.main.bundleURL.pathExtension.elementsEqual("appex"),
+              let backup = UserDefaults.standard.data(forKey: "PCFileBridge.savedServersBackup"),
+              let servers = try? JSONDecoder.bridge.decode([SavedServer].self, from: backup) else { return [] }
+        try? saveServers(servers)
+        return servers
     }
 
     static func saveServers(_ servers: [SavedServer]) throws {
         guard let file = serversFile else { throw BridgeError.sharedContainerUnavailable }
         let data = try JSONEncoder.bridge.encode(servers)
         try data.write(to: file, options: .atomic)
+        if Bundle.main.bundleURL.pathExtension != "appex" {
+            UserDefaults.standard.set(data, forKey: "PCFileBridge.savedServersBackup")
+        }
     }
 
     static func server(forDomain id: String) -> SavedServer? { loadServers().first { $0.id == id } }
@@ -45,6 +53,13 @@ enum SharedTokenStore {
     private static var tokensFile: URL? {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: BridgeConstants.appGroup)?.appendingPathComponent("tokens.json")
     }
+    private static var privateBackup: URL? {
+        guard Bundle.main.bundleURL.pathExtension != "appex",
+              let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        let directory = folder.appendingPathComponent("PCFileBridge", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("connection-keys.json")
+    }
 
     static func save(_ token: String, for serverId: String) throws {
         lock.lock(); defer { lock.unlock() }
@@ -52,12 +67,17 @@ enum SharedTokenStore {
         var tokens = readTokens(from: file)
         tokens[serverId] = token
         try writeTokens(tokens, to: file)
+        if let backup = privateBackup { try writeTokens(tokens, to: backup) }
     }
 
     static func load(for serverId: String) throws -> String {
         lock.lock(); defer { lock.unlock() }
         guard let file = tokensFile else { throw BridgeError.sharedContainerUnavailable }
-        guard let token = readTokens(from: file)[serverId] else { throw BridgeError.tokenNotFound }
+        if let token = readTokens(from: file)[serverId] { return token }
+        guard let backup = privateBackup, let token = readTokens(from: backup)[serverId] else { throw BridgeError.tokenNotFound }
+        var tokens = readTokens(from: file)
+        tokens[serverId] = token
+        try writeTokens(tokens, to: file)
         return token
     }
 
@@ -67,6 +87,11 @@ enum SharedTokenStore {
         var tokens = readTokens(from: file)
         tokens.removeValue(forKey: serverId)
         try? writeTokens(tokens, to: file)
+        if let backup = privateBackup {
+            var saved = readTokens(from: backup)
+            saved.removeValue(forKey: serverId)
+            try? writeTokens(saved, to: backup)
+        }
     }
 
     private static func readTokens(from file: URL) -> [String: String] {

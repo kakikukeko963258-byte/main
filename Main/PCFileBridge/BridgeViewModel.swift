@@ -81,7 +81,11 @@ final class BridgeViewModel: ObservableObject {
             // A successful setup remains valid after its short-lived code expires.
             let data = try Data(contentsOf: url)
             let metadata = try JSONDecoder.bridge.decode(ConnectionSetup.self, from: data)
-            if UserDefaults.standard.string(forKey: "PCFileBridge.completedSetup") == metadata.setupId { return }
+            if UserDefaults.standard.string(forKey: "PCFileBridge.completedSetup") == metadata.setupId && !servers.isEmpty { return }
+            if servers.isEmpty {
+                UserDefaults.standard.removeObject(forKey: "PCFileBridge.attemptedSetup")
+                UserDefaults.standard.removeObject(forKey: "PCFileBridge.completedSetup")
+            }
             if servers.contains(where: { $0.baseURL == BridgeClient.normalize(metadata.baseURL) }) { return }
             let setup = try ConnectionSetup.decode(data)
             preparedSetup = setup
