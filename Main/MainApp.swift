@@ -353,6 +353,7 @@ struct HomeView: View {
                 guard liftKey == nil else { return }
                 liftKey = "folder-\(slot)"
                 liftFeedback.fire()
+                suppressTapUntil = Date().addingTimeInterval(0.8)
                 dragOrigin = metrics.folderIconRect((item.slots.firstIndex(of: slot) ?? 0) % 9)
                 dragTranslation = .zero
                 if editing { startFolderDrag(slot, item: item) }
@@ -596,6 +597,7 @@ struct HomeView: View {
     }
     private func open(_ slot: Int, source: CGRect) {
         guard !editing && Date() > suppressTapUntil else { return }
+        iconMenu = nil
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         appSource = source
         appProgress = 0
