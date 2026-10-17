@@ -325,8 +325,14 @@ final class AppWindowView: UIView {
         surface.transform = CGAffineTransform(scaleX: rect.width / pageSize.width,
                                               y: rect.height / pageSize.height)
         surface.center = CGPoint(x: rect.midX, y: rect.midY)
-        // A continuous corner is handled by Core Animation instead of a rebuilt path.
-        surface.layer.cornerRadius = pageSize.width * 0.24 * (1 - t)
+        // Keep the visible corner radius on the screen moving linearly toward
+        // the icon. `cornerRadius` lives in the unscaled surface's coordinates,
+        // so compensate for the surface transform; otherwise it stays too round
+        // through most of the shrink and suddenly loses its corner at the end.
+        let scale = max(0.001, rect.width / pageSize.width)
+        let iconCornerOnScreen = source.width * 0.24
+        surface.layer.cornerRadius = min(pageSize.width / 2,
+                                         iconCornerOnScreen * (1 - t) / scale)
         // Reference: retain the app until it is close to the destination icon,
         // then crossfade the last part of the shrink. No animated blur or layout.
         let blend = min(1, max(0, (t - 0.04) / 0.26))
