@@ -13,8 +13,10 @@ final class BridgeViewModel: ObservableObject {
     @Published var error: String?
     @Published var connectionStates: [String: ConnectionStatus] = [:]
     @Published var canRetrySetup = false
+    @Published var filesRegistrationErrors: [String: String] = [:]
     private var preparedSetup: ConnectionSetup?
     private var isRefreshingConnections = false
+    private var filesRegistrationAttempts: Set<String> = []
 
     init() { servers = SharedConfiguration.loadServers() }
 
@@ -24,25 +26,53 @@ final class BridgeViewModel: ObservableObject {
               pairingCode.count == 6 else { error = "PCのアドレスと6桁コードを入力してください。"; return false }
         isWorking = true; error = nil; message = nil
         defer { isWorking = false }
+        var stage = "PCとの登録通信"
         do {
             let response = try await BridgeClient.pair(baseURL: address, code: pairingCode, deviceName: UIDevice.current.name)
             let server = SavedServer(id: UUID().uuidString.lowercased(), name: response.serverName, baseURL: BridgeClient.normalize(address), deviceId: response.deviceId, addedAt: Date())
+            stage = "接続キーの保存"
             try SharedTokenStore.save(response.token, for: server.id)
             let updatedServers = [server] + servers
+            stage = "PC設定の保存"
             do {
                 try SharedConfiguration.saveServers(updatedServers)
-                try await addDomain(for: server)
-                servers = updatedServers
             } catch {
                 SharedTokenStore.delete(for: server.id)
-                try? SharedConfiguration.saveServers(servers)
                 throw error
             }
+            servers = updatedServers
             address = ""; pairingCode = ""
-            message = "\(server.name)を登録しました。次回から入力なしで再接続します。"
-            connectionStates[server.id] = .connected
+            await refreshConnections()
+            if filesRegistrationErrors[server.id] == nil {
+                message = "\(server.name)を登録しました。次回から入力なしで再接続します。"
+            }
             return true
-        } catch { self.error = error.localizedDescription; return false }
+        } catch { self.error = Self.describe(error, stage: stage); return false }
+    }
+
+    func registerInFiles(_ server: SavedServer) async {
+        filesRegistrationAttempts.insert(server.id)
+        do {
+            try await addDomain(for: server)
+            filesRegistrationErrors[server.id] = nil
+        } catch {
+            filesRegistrationErrors[server.id] = Self.describe(error, stage: "Filesへの登録")
+        }
+    }
+
+    private static func describe(_ error: Error, stage: String) -> String {
+        if let decoding = error as? DecodingError {
+            let field: String
+            switch decoding {
+            case .keyNotFound(let key, _): field = key.stringValue
+            case .typeMismatch(_, let context), .valueNotFound(_, let context), .dataCorrupted(let context):
+                field = context.codingPath.map(\.stringValue).joined(separator: ".")
+            @unknown default: field = ""
+            }
+            return "\(stage)：応答の形式を読み取れません（\(field.isEmpty ? "JSON" : field)）。"
+        }
+        let details = error as NSError
+        return "\(stage)：\(error.localizedDescription)（\(details.domain) / \(details.code)）"
     }
 
     func prepareConnection() async {
@@ -94,6 +124,7 @@ final class BridgeViewModel: ObservableObject {
                 let client = BridgeClient(server: server, token: try SharedTokenStore.load(for: server.id))
                 try await client.checkConnection()
                 connectionStates[server.id] = .connected
+                if !filesRegistrationAttempts.contains(server.id) { await registerInFiles(server) }
             } catch BridgeError.tokenNotFound { connectionStates[server.id] = .needsPairing }
             catch BridgeError.http(401, _) { connectionStates[server.id] = .needsPairing }
             catch { connectionStates[server.id] = .offline }

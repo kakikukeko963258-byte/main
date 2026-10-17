@@ -51,7 +51,7 @@ struct PCFileBridgeView: View {
                     }
                 } header: { Text("ネットワーク上で見つかったPC") }
 
-                Section("Filesに登録済み") {
+                Section("保存済みのPC") {
                     if model.servers.isEmpty { Text("ペアリングしたPCはありません。").foregroundStyle(.secondary) }
                     ForEach(model.servers) { server in
                         VStack(alignment: .leading, spacing: 8) {
@@ -62,6 +62,10 @@ struct PCFileBridgeView: View {
                                 .foregroundStyle(status == .connected ? Color.green : Color.secondary)
                             NavigationLink("ファイルを閲覧") {
                                 RemoteFolderView(server: server, parentId: "root", title: server.name)
+                            }
+                            if let registrationError = model.filesRegistrationErrors[server.id] {
+                                Text(registrationError).font(.caption).foregroundStyle(.red)
+                                Button("Filesへの登録を再試行") { Task { await model.registerInFiles(server) } }
                             }
                             HStack {
                                 Button("接続テスト") { Task { await model.test(server) } }
