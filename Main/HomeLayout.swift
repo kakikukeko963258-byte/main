@@ -326,20 +326,24 @@ final class AppWindowView: UIView {
     }
     fileprivate func advance(_ timestamp: CFTimeInterval) {
         let u = min(1, max(0, (timestamp - animationStarted) / animationDuration))
-        // Spring the visible expansion while retaining the measured shape/path.
+        // Spring closing only, retaining the measured opening shape/path.
         // Keep overshoot separate from the clamped morph and crossfade, so the
         // spring can recoil without extrapolating the four-edge measurements.
         let opening = targetProgress > animationFrom
-        let eased = LaunchMorph.springResponse(u, opening: opening)
+        let eased = opening ? CGFloat(1 - pow(1 - u, 3)) : LaunchMorph.closingSpringResponse(u)
         let fromExpansion = LaunchMorph.expansion(at: animationFrom)
         let toExpansion = LaunchMorph.expansion(at: targetProgress)
         let rawExpansion = fromExpansion + (toExpansion - fromExpansion) * eased
         currentProgress = LaunchMorph.progress(forExpansion: rawExpansion)
-        let recoil: CGFloat
-        if rawExpansion > 1 { recoil = (rawExpansion - 1) * 0.55 }
-        else if rawExpansion < 0 { recoil = rawExpansion * 2 }
-        else { recoil = 0 }
-        apply(currentProgress, recoil: recoil)
+        let overshoot = opening ? 0 : max(0, -rawExpansion)
+        let recoil = -overshoot * 2.4
+        let limit = source.width * 0.06
+        func drift(_ distance: CGFloat) -> CGFloat {
+            max(-limit, min(limit, distance * overshoot * 0.35))
+        }
+        let offset = CGSize(width: drift(source.midX - pageSize.width / 2),
+                            height: drift(source.midY - pageSize.height / 2))
+        apply(currentProgress, recoil: recoil, recoilOffset: offset)
         if u >= 1 {
             displayLink?.invalidate()
             displayLink = nil
@@ -361,7 +365,7 @@ final class AppWindowView: UIView {
         host.view.layoutIfNeeded()
         UIAccessibility.post(notification: .screenChanged, argument: nil)
     }
-    private func apply(_ t: CGFloat, recoil: CGFloat = 0) {
+    private func apply(_ t: CGFloat, recoil: CGFloat = 0, recoilOffset: CGSize = .zero) {
         let morph = LaunchMorph(progress: t, source: source, screen: pageSize)
         let sx = max(0.001, morph.size.width / pageSize.width)
         let sy = max(0.001, morph.size.height / pageSize.height)
@@ -377,7 +381,8 @@ final class AppWindowView: UIView {
         CATransaction.setDisableActions(true)
         let scale = 1 + recoil
         let rebound = CGAffineTransform(a: scale, b: 0, c: 0, d: scale,
-                                       tx: morph.center.x * (1 - scale), ty: morph.center.y * (1 - scale))
+                                       tx: morph.center.x * (1 - scale) + recoilOffset.width,
+                                       ty: morph.center.y * (1 - scale) + recoilOffset.height)
         surface.layer.transform = CATransform3DConcat(morph.transform, CATransform3DMakeAffineTransform(rebound))
         contourMask.path = path.copy(using: &inverseScale)
         surface.layer.mask = t >= 0.9999 ? nil : contourMask
