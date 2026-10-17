@@ -22,7 +22,10 @@ jobs:
           set -euo pipefail
           xcodebuild -project main.xcodeproj -scheme main -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
       - name: Package AltStore IPA
-        run: bash scripts/package-ipa.sh
+        run: |
+          ruby -e "require 'xcodeproj'" || gem install xcodeproj --no-document
+          bash scripts/build-embedded-wda.sh
+          bash scripts/package-ipa.sh
       - uses: actions/upload-artifact@v4
         with:
           name: main-ipa
