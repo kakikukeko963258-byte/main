@@ -18,6 +18,8 @@ targets:
       path: Main/Info.plist
       properties:
         CFBundleDisplayName: main
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSLocalNetworkUsageDescription: Windows PCを検出し、選択した共有フォルダーへ接続します。
