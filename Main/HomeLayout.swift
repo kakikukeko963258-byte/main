@@ -197,8 +197,11 @@ struct FolderTransitionLayer: View, Animatable {
     }
 }
 
-struct AppTransitionLayer: View, Animatable {
+// Keep the page at its final layout size. UIKit animates a single captured surface;
+// neither SwiftUI layout nor the live glass back button runs on every animation frame.
+struct AppTransitionLayer: UIViewRepresentable {
     var progress: CGFloat
+    let animated: Bool
     let slot: Int
     let source: CGRect
     let size: CGSize
@@ -207,26 +210,84 @@ struct AppTransitionLayer: View, Animatable {
     let close: () -> Void
     let dragChanged: (CGFloat) -> Void
     let dragEnded: (Bool) -> Void
-    var animatableData: CGFloat {
-        get { progress }
-        set { progress = newValue }
+
+    func makeUIView(context: Context) -> AppWindowView {
+        let page = SlotPage(slot: slot, wallpaper: wallpaper, safeTop: safeTop,
+                            close: close, dragChanged: dragChanged, dragEnded: dragEnded)
+        return AppWindowView(page: page, size: size, source: source)
     }
-    var body: some View {
+    func updateUIView(_ view: AppWindowView, context: Context) {
+        view.setProgress(progress, animated: animated && context.transaction.animation != nil)
+    }
+}
+
+final class AppWindowView: UIView {
+    private let host: UIHostingController<SlotPage>
+    private let surface = UIView()
+    private let pageSize: CGSize
+    private let source: CGRect
+    private var capture: UIView?
+    private var animator: UIViewPropertyAnimator?
+    private var currentProgress: CGFloat = 0
+
+    init(page: SlotPage, size: CGSize, source: CGRect) {
+        host = UIHostingController(rootView: page)
+        pageSize = size
+        self.source = source
+        super.init(frame: CGRect(origin: .zero, size: size))
+        backgroundColor = .clear
+        surface.frame = CGRect(origin: .zero, size: size)
+        surface.layer.cornerCurve = .continuous
+        surface.clipsToBounds = true
+        addSubview(surface)
+        host.view.backgroundColor = .clear
+        host.view.frame = surface.bounds
+        host.view.insetsLayoutMarginsFromSafeArea = false
+        if #available(iOS 16.4, *) { host.safeAreaRegions = [] }
+        surface.addSubview(host.view)
+        apply(0)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func setProgress(_ progress: CGFloat, animated: Bool) {
         let t = min(1, max(0, progress))
-        let rect = interpolatedRect(source, CGRect(origin: .zero, size: size), t)
-        let radius = source.width * 0.5 * (1 - t)
-        ZStack {
-            SlotPage(slot: slot, wallpaper: wallpaper, safeTop: safeTop, close: close,
-                     dragChanged: dragChanged, dragEnded: dragEnded)
-                .frame(width: size.width, height: size.height)
-                .scaleEffect(x: rect.width / size.width, y: rect.height / size.height)
-                .frame(width: rect.width, height: rect.height)
-                .opacity(min(1, max(0, (t - 0.12) / 0.22)))
-            SlotIcon(slot: slot).frame(width: rect.width, height: rect.height)
-                .opacity(1 - min(1, t / 0.24)).allowsHitTesting(false)
-        }.frame(width: rect.width, height: rect.height)
-            .clipShape(WindowContour(corner: radius))
-            .position(x: rect.midX, y: rect.midY)
-            .frame(width: size.width, height: size.height, alignment: .topLeading)
+        guard t != currentProgress else { return }
+        currentProgress = t
+        animator?.stopAnimation(true)
+        if capture == nil {
+            // Capture before changing transforms, once per opening/closing gesture.
+            host.view.layoutIfNeeded()
+            if let snapshot = host.view.snapshotView(afterScreenUpdates: true) {
+                snapshot.frame = CGRect(origin: .zero, size: pageSize)
+                surface.addSubview(snapshot)
+                capture = snapshot
+                host.view.isHidden = true
+            }
+        }
+        let changes = { self.apply(t) }
+        let completion: (UIViewAnimatingPosition) -> Void = { [weak self] position in
+            guard let self, position == .end, self.currentProgress == 1 else { return }
+            self.host.view.isHidden = false
+            self.capture?.removeFromSuperview()
+            self.capture = nil
+            self.animator = nil
+        }
+        if animated {
+            let animation = UIViewPropertyAnimator(duration: 0.45, dampingRatio: 0.90, animations: changes)
+            animation.addCompletion(completion)
+            animator = animation
+            animation.startAnimation()
+        } else {
+            changes()
+            completion(.end)
+        }
+    }
+    private func apply(_ t: CGFloat) {
+        let rect = interpolatedRect(source, CGRect(origin: .zero, size: pageSize), t)
+        surface.transform = CGAffineTransform(scaleX: rect.width / pageSize.width,
+                                              y: rect.height / pageSize.height)
+        surface.center = CGPoint(x: rect.midX, y: rect.midY)
+        // A continuous corner is handled by Core Animation instead of a rebuilt path.
+        surface.layer.cornerRadius = pageSize.width * 0.24 * (1 - t)
     }
 }

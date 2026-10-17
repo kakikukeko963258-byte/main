@@ -184,8 +184,8 @@ struct HomeView: View {
                     .blur(radius: reduceMotion ? 0 : 6 * folderProgress)
                 homePages(metrics)
                     .compositingGroup()
-                    .scaleEffect(reduceMotion ? 1 : 1 + 0.07 * folderProgress + 0.035 * appProgress)
-                    .blur(radius: 10 * folderProgress + 7 * appProgress)
+                    .scaleEffect(reduceMotion ? 1 : 1 + 0.07 * folderProgress)
+                    .blur(radius: 10 * folderProgress)
                     .opacity(1 - 0.12 * folderProgress)
                     .allowsHitTesting(folderID == nil && selectedSlot == nil)
                     .accessibilityHidden(folderID != nil || selectedSlot != nil)
@@ -197,7 +197,7 @@ struct HomeView: View {
                     .zIndex(2)
                 }
                 if let slot = selectedSlot {
-                    AppTransitionLayer(progress: reduceMotion ? 1 : appProgress, slot: slot,
+                    AppTransitionLayer(progress: reduceMotion ? 1 : appProgress, animated: !reduceMotion, slot: slot,
                                        source: appSource, size: geometry.size, safeTop: safeTop, wallpaper: wallpaper,
                                        close: closeApp,
                                        dragChanged: { amount in appProgress = 1 - min(0.55, max(0, amount / geometry.size.height)) },
