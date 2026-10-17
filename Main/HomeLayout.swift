@@ -291,7 +291,8 @@ final class AppWindowView: UIView {
                 host.view.isHidden = true
             }
         }
-        let changes = { self.apply(t, updateOpacity: !animated) }
+        let opening = t > startProgress
+        let changes = { self.apply(t, updateOpacity: !animated, opening: opening) }
         let completion: (UIViewAnimatingPosition) -> Void = { [weak self] position in
             guard let self, position == .end, self.currentProgress == 1 else { return }
             self.host.view.isHidden = false
@@ -300,27 +301,20 @@ final class AppWindowView: UIView {
             self.animator = nil
         }
         if animated {
+            // Drive the crossfade from the same progress as the window. A
+            // separate keyframe animation kept restarting as SwiftUI sent new
+            // spring values, making the icon linger before the page appeared.
+            setOpacity(for: t, opening: opening)
             let animation = UIViewPropertyAnimator(duration: 0.45, dampingRatio: 0.90, animations: changes)
             animation.addCompletion(completion)
             animator = animation
-            let closing = t < startProgress
-            // Alpha timing is separate from the window spring. Evaluating an
-            // easing formula only at the endpoints would fade for the full move.
-            UIView.animateKeyframes(withDuration: 0.45, delay: 0,
-                                    options: [.beginFromCurrentState, .allowUserInteraction]) {
-                UIView.addKeyframe(withRelativeStartTime: closing ? 0.62 : 0,
-                                   relativeDuration: closing ? 0.30 : 0.24) {
-                    self.icon.alpha = closing ? 1 : 0
-                    self.capture?.alpha = closing ? 0 : 1
-                }
-            }
             animation.startAnimation()
         } else {
             changes()
             completion(.end)
         }
     }
-    private func apply(_ t: CGFloat, updateOpacity: Bool = true) {
+    private func apply(_ t: CGFloat, updateOpacity: Bool = true, opening: Bool = false) {
         let rect = interpolatedRect(source, CGRect(origin: .zero, size: pageSize), t)
         surface.transform = CGAffineTransform(scaleX: rect.width / pageSize.width,
                                               y: rect.height / pageSize.height)
@@ -335,11 +329,17 @@ final class AppWindowView: UIView {
                                          iconCornerOnScreen * (1 - t) / scale)
         // Reference: retain the app until it is close to the destination icon,
         // then crossfade the last part of the shrink. No animated blur or layout.
-        let blend = min(1, max(0, (t - 0.04) / 0.26))
+        if updateOpacity { setOpacity(for: t, opening: opening) }
+    }
+    private func setOpacity(for t: CGFloat, opening: Bool) {
+        let start: CGFloat = opening ? 0 : 0.04
+        let duration: CGFloat = opening ? 0.12 : 0.26
+        let blend = min(1, max(0, (t - start) / duration))
         let pageAlpha = blend * blend * (3 - 2 * blend)
-        if updateOpacity {
-            icon.alpha = 1 - pageAlpha
-            capture?.alpha = pageAlpha
-        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        icon.alpha = 1 - pageAlpha
+        capture?.alpha = pageAlpha
+        CATransaction.commit()
     }
 }
