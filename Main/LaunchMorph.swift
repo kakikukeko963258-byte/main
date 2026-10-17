@@ -34,13 +34,14 @@ struct LaunchMorph {
         .init(time: 14/60, leftTop: 3, rightTop: 374, leftBottom: 0, rightBottom: 386, top: 15, bottom: 831),
         .init(time: 16/60, leftTop: 2, rightTop: 381, leftBottom: 0, rightBottom: 389, top: 8, bottom: 838),
         .init(time: 20/60, leftTop: 1, rightTop: 387, leftBottom: 0, rightBottom: 390, top: 2, bottom: 843),
-        .init(time: 26/60, leftTop: 0, rightTop: 390, leftBottom: 0, rightBottom: 390, top: 0, bottom: 844),
-        .init(time: 0.5, leftTop: 0, rightTop: 390, leftBottom: 0, rightBottom: 390, top: 0, bottom: 844)
+        .init(time: 26/60, leftTop: 0, rightTop: 390, leftBottom: 0, rightBottom: 390, top: 0, bottom: 844)
     ]
-    static let duration: CFTimeInterval = 0.5
+    static let openingDuration: CFTimeInterval = 0.36
+    static let closingDuration: CFTimeInterval = 0.30
+    private static let sampledDuration: CGFloat = 26 / 60
 
     private static func sample(_ progress: CGFloat) -> Sample {
-        let time = min(1, max(0, progress)) * CGFloat(duration)
+        let time = min(1, max(0, progress)) * sampledDuration
         let next = samples.firstIndex(where: { $0.time >= time }) ?? samples.count - 1
         guard next > 0 else { return samples[0] }
         let a = samples[next - 1], b = samples[next]

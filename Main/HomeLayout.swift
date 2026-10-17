@@ -254,7 +254,7 @@ final class AppWindowView: UIView {
     private var targetProgress: CGFloat = 0
     private var animationFrom: CGFloat = 0
     private var animationStarted: CFTimeInterval = 0
-    private var animationDuration: CFTimeInterval = LaunchMorph.duration
+    private var animationDuration: CFTimeInterval = LaunchMorph.openingDuration
 
     init(page: SlotPage, size: CGSize, source: CGRect) {
         host = UIHostingController(rootView: page)
@@ -311,7 +311,8 @@ final class AppWindowView: UIView {
         if animated {
             animationFrom = currentProgress
             animationStarted = CACurrentMediaTime()
-            animationDuration = LaunchMorph.duration * max(0.25, Double(abs(t - currentProgress)))
+            let duration = t > currentProgress ? LaunchMorph.openingDuration : LaunchMorph.closingDuration
+            animationDuration = duration * max(0.25, Double(abs(t - currentProgress)))
             let clock = WindowAnimationClock(owner: self)
             let link = CADisplayLink(target: clock, selector: #selector(WindowAnimationClock.tick(_:)))
             link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
@@ -325,9 +326,10 @@ final class AppWindowView: UIView {
     }
     fileprivate func advance(_ timestamp: CFTimeInterval) {
         let u = min(1, max(0, (timestamp - animationStarted) / animationDuration))
-        // The recorded samples already contain acceleration and settling.
-        // Applying another ease-out would skip the initial deformation.
-        let eased = CGFloat(u)
+        // Keep the measured deformation, but give the beginning a small push.
+        // Closing gets a firmer start; the fully expanded idle tail is removed.
+        let power = targetProgress > animationFrom ? 1.08 : 1.25
+        let eased = CGFloat(1 - pow(1 - u, power))
         currentProgress = animationFrom + (targetProgress - animationFrom) * eased
         apply(currentProgress)
         if u >= 1 {

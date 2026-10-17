@@ -211,7 +211,7 @@ struct HomeView: View {
     @State private var hoverStart = Date.distantPast
     @State private var suppressTapUntil = Date.distantPast
     @State private var folderDraggedSlot: Int?
-    private var folderMotion: Animation { reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.42, dampingFraction: 0.88) }
+    private var folderMotion: Animation { reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.36, dampingFraction: 0.90) }
     private var appMotion: Animation { reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.45, dampingFraction: 0.90) }
     private var wallpaperURL: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("wallpaper.jpg") }
 
@@ -617,7 +617,7 @@ struct HomeView: View {
         appInteracting = false
         if reduceMotion { withAnimation(appMotion) { appProgress = 0 } }
         else { appProgress = 0 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.56) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + LaunchMorph.closingDuration + 0.05) {
             if appProgress == 0 {
                 selectedSlot = nil
                 DispatchQueue.main.async { UIAccessibility.post(notification: .screenChanged, argument: nil) }
@@ -629,7 +629,7 @@ struct HomeView: View {
         if let id = folderID { store.rename(id, to: folderName) }
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         withAnimation(folderMotion) { folderProgress = 0 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.48) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
             if folderProgress == 0 {
                 folderID = nil
                 DispatchQueue.main.async { UIAccessibility.post(notification: .layoutChanged, argument: nil) }
