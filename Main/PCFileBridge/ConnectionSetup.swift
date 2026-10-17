@@ -8,6 +8,19 @@ struct ConnectionSetup: Decodable {
     let expiresUtc: Date
     let serverName: String
 
+    static func dataFromQR(_ value: String) throws -> Data {
+        guard value.utf8.count <= 12000,
+              let url = URLComponents(string: value), url.scheme == "pcfilebridge", url.host == "pair",
+              url.user == nil, url.password == nil, url.port == nil, url.fragment == nil,
+              url.path.isEmpty, let query = url.queryItems, query.count == 1, query[0].name == "data",
+              let encoded = query[0].value else { throw SetupError.invalid }
+        var base64 = encoded.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
+        guard let data = Data(base64Encoded: base64) else { throw SetupError.invalid }
+        _ = try decode(data)
+        return data
+    }
+
     static func decode(_ data: Data) throws -> ConnectionSetup {
         guard data.count <= 8192 else { throw SetupError.invalid }
         let setup = try JSONDecoder.bridge.decode(ConnectionSetup.self, from: data)

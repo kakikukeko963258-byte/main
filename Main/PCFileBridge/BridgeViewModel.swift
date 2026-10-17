@@ -29,10 +29,12 @@ final class BridgeViewModel: ObservableObject {
         var stage = "PCとの登録通信"
         do {
             let response = try await BridgeClient.pair(baseURL: address, code: pairingCode, deviceName: UIDevice.current.name)
-            let server = SavedServer(id: UUID().uuidString.lowercased(), name: response.serverName, baseURL: BridgeClient.normalize(address), deviceId: response.deviceId, addedAt: Date())
+            let baseURL = BridgeClient.normalize(address)
+            let previous = servers.first { $0.baseURL == baseURL }
+            let server = SavedServer(id: previous?.id ?? UUID().uuidString.lowercased(), name: response.serverName, baseURL: baseURL, deviceId: response.deviceId, addedAt: previous?.addedAt ?? Date())
             stage = "接続キーの保存"
             try SharedTokenStore.save(response.token, for: server.id)
-            let updatedServers = [server] + servers
+            let updatedServers = [server] + servers.filter { $0.id != server.id }
             stage = "PC設定の保存"
             do {
                 try SharedConfiguration.saveServers(updatedServers)

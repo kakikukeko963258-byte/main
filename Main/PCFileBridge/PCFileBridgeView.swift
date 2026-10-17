@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct PCFileBridgeView: View {
     let onHome: () -> Void
     @State private var showSetupImporter = false
+    @State private var showQRScanner = false
     @State private var showManualPairing = false
     @StateObject private var model = BridgeViewModel()
     @StateObject private var discovery = PCDiscovery()
@@ -16,7 +17,9 @@ struct PCFileBridgeView: View {
                 Section {
                     Text("初回設定後は、外出先でも保存したPCへ自動で再接続します。PCを起動し、両方のTailscaleをオンにしてください。")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Button("初回設定を読み込む") { showSetupImporter = true }
+                    Button { showQRScanner = true } label: { Label("QRコードで接続", systemImage: "qrcode.viewfinder") }
+                        .disabled(model.isWorking)
+                    Button("設定ファイルを読み込む") { showSetupImporter = true }
                     if model.canRetrySetup {
                         Button("初回の接続を再試行") { Task { await model.retrySetup() } }.disabled(model.isWorking)
                     }
@@ -109,6 +112,24 @@ struct PCFileBridgeView: View {
                     let data = try Data(contentsOf: url)
                     Task { await model.importSetup(data) }
                 } catch { model.error = error.localizedDescription }
+            }
+            .sheet(isPresented: $showQRScanner) {
+                NavigationStack {
+                    PairingQRScanner { result in
+                        showQRScanner = false
+                        switch result {
+                        case .success(let value):
+                            do {
+                                let data = try ConnectionSetup.dataFromQR(value)
+                                Task { await model.importSetup(data) }
+                            } catch { model.error = error.localizedDescription }
+                        case .failure(let error): model.error = error.localizedDescription
+                        }
+                    }
+                    .navigationTitle("PCのQRコードを読み取る")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { showQRScanner = false } } }
+                }
             }
             .onChange(of: model.servers) { servers in
                 if scenePhase == .active { changeMonitor.start(servers: servers) }
