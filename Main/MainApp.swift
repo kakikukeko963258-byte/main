@@ -24,21 +24,38 @@ struct HomeItem: Identifiable, Codable, Equatable {
 
 final class HomeStore: ObservableObject {
     @Published var items: [HomeItem] { didSet { save() } }
+    @Published private(set) var hiddenSlots: [Int] = UserDefaults.standard.array(forKey: "hidden-slots") as? [Int] ?? []
     init() {
         if let data = UserDefaults.standard.data(forKey: "home-layout-v2"),
            let saved = try? JSONDecoder().decode([HomeItem].self, from: data),
-           saved.flatMap(\.slots).sorted() == Array(1...32) {
+           (saved.flatMap(\.slots) + (UserDefaults.standard.array(forKey: "hidden-slots") as? [Int] ?? [])).sorted() == Array(1...32) {
             items = saved.map { item in
                 var repaired = item
                 if repaired.slots.count == 1 { repaired.name = String(repaired.slots[0]) }
                 return repaired
             }
-        } else { items = HomeItem.initial }
+        } else {
+            items = HomeItem.initial
+            hiddenSlots = []
+            UserDefaults.standard.removeObject(forKey: "hidden-slots")
+        }
     }
     private func save() {
         if let data = try? JSONEncoder().encode(items) {
             UserDefaults.standard.set(data, forKey: "home-layout-v2")
         }
+    }
+    func removeFromHome(_ id: String) {
+        guard let item = items.first(where: { $0.id == id }) else { return }
+        hiddenSlots = Array(Set(hiddenSlots + item.slots)).sorted()
+        UserDefaults.standard.set(hiddenSlots, forKey: "hidden-slots")
+        items.removeAll { $0.id == id }
+    }
+    func restore(_ slot: Int) {
+        guard hiddenSlots.contains(slot) else { return }
+        hiddenSlots.removeAll { $0 == slot }
+        UserDefaults.standard.set(hiddenSlots, forKey: "hidden-slots")
+        items.append(HomeItem(id: UUID().uuidString, name: String(slot), slots: [slot]))
     }
     func merge(source: String, target: String) {
         guard source != target,
@@ -149,6 +166,7 @@ struct HomeView: View {
     @State private var folderID: String?
     @State private var folderProgress: CGFloat = 0
     @State private var folderSource = CGRect.zero
+    @State private var removalItem: HomeItem?
     @State private var selectedSlot: Int?
     @State private var appProgress: CGFloat = 0
     @State private var appSource = CGRect.zero
@@ -265,6 +283,20 @@ struct HomeView: View {
                 } catch { wallpaperError = true }
             }
         }
+        .confirmationDialog("ホーム画面から取り除きますか？", isPresented: Binding(
+            get: { removalItem != nil }, set: { if !$0 { removalItem = nil } }
+        ), titleVisibility: .visible) {
+            if let item = removalItem {
+                Button("ホーム画面から取り除く", role: .destructive) {
+                    store.removeFromHome(item.id)
+                    page = min(page, max(0, (store.items.count - 1) / 24))
+                    removalItem = nil
+                }
+            }
+            Button("キャンセル", role: .cancel) { removalItem = nil }
+        } message: {
+            Text("番号ページは検索から開けます。検索の長押しメニューからホーム画面に戻せます。")
+        }
         .alert("背景を読み込めませんでした", isPresented: $wallpaperError) {
             Button("OK", role: .cancel) {}
         }
@@ -278,6 +310,7 @@ FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
                                           draggingSlot: folderDraggedSlot,
                                           dragChanged: { slot, translation in
                         editing = true
+                        if folderDraggedSlot != slot { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
                         folderDraggedSlot = slot
                         draggedItem = HomeItem(id: "folder-drag", name: String(slot), slots: [slot])
                         dragOrigin = metrics.folderIconRect((item.slots.firstIndex(of: slot) ?? 0) % 9)
@@ -343,7 +376,7 @@ FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
                     pagePan = 0
                 }
             })
-            Button { showSearch = true } label: {
+            Button { editing = false; showSearch = true } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "magnifyingglass").font(.system(size: metrics.label, weight: .semibold))
                     Text("検索").font(.system(size: metrics.label, weight: .medium))
@@ -377,6 +410,17 @@ FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
             }.frame(width: metrics.cell, height: metrics.tileHeight).contentShape(Rectangle())
         }.buttonStyle(IconPressStyle())
             .accessibilityLabel(item.isFolder ? "\(item.name)、\(item.slots.count)個のアプリ" : "アプリ \(item.displayName)")
+            .overlay(alignment: .topLeading) {
+                if editing {
+                    Button { removalItem = item } label: {
+                        Image(systemName: "minus").font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.black).frame(width: 24, height: 24)
+                            .background(.white.opacity(0.9), in: Circle())
+                    }.buttonStyle(.plain)
+                        .offset(x: (metrics.cell - metrics.icon) / 2 - 7, y: -7)
+                        .accessibilityLabel("\(item.displayName)をホーム画面から取り除く")
+                }
+            }
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.35)
                 .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("home")))
                 .onChanged { value in
@@ -385,7 +429,10 @@ FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
                         editing = true
                         suppressTapUntil = Date().addingTimeInterval(0.8)
                         guard let drag else { return }
-                        if draggedItem == nil { draggedItem = item; dragOrigin = rect }
+                        if draggedItem == nil {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            draggedItem = item; dragOrigin = rect
+                        }
                         dragTranslation = drag.translation
                         let point = CGPoint(x: rect.midX + drag.translation.width, y: rect.midY + drag.translation.height)
                         updateEdgePaging(point, width: metrics.size.width)
@@ -463,7 +510,12 @@ FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
                             open(slot, source: CGRect(x: screenSize.width / 2 - 30, y: screenSize.height / 2 - 30, width: 60, height: 60))
                         } label: {
                             VStack { SlotIcon(slot: slot).frame(width: 60, height: 60); Text("\(slot)") }
-                        }.buttonStyle(IconPressStyle())
+                        }.buttonStyle(IconPressStyle()).accessibilityLabel("検索アプリ \(slot)")
+                            .contextMenu {
+                                if store.hiddenSlots.contains(slot) {
+                                    Button("ホーム画面に戻す") { store.restore(slot) }
+                                }
+                            }
                     }
                 }.padding()
             }.searchable(text: $query, prompt: "番号を検索")

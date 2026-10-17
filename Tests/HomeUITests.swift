@@ -49,6 +49,24 @@ final class HomeUITests: XCTestCase {
         app.terminate()
         app.launch()
         XCTAssertTrue(app.buttons["アプリ 7"].waitForExistence(timeout: 10))
+        app.buttons["アプリ 7"].press(forDuration: 0.5)
+        let removeHome = app.buttons["7をホーム画面から取り除く"]
+        XCTAssertTrue(removeHome.waitForExistence(timeout: 5))
+        capture("06-edit-minus")
+        removeHome.tap()
+        app.buttons["ホーム画面から取り除く"].tap()
+        app.buttons["完了"].tap()
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["検索"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["アプリ 7"].exists)
+        app.buttons["検索"].tap()
+        let searchSeven = app.buttons["検索アプリ 7"]
+        XCTAssertTrue(searchSeven.waitForExistence(timeout: 5))
+        searchSeven.press(forDuration: 0.7)
+        app.buttons["ホーム画面に戻す"].tap()
+        app.buttons["完了"].tap()
+        XCTAssertTrue(app.buttons["アプリ 7"].waitForExistence(timeout: 5))
     }
     @MainActor
     private func capture(_ name: String) {

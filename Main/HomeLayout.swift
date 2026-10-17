@@ -224,6 +224,7 @@ struct AppTransitionLayer: UIViewRepresentable {
 final class AppWindowView: UIView {
     private let host: UIHostingController<SlotPage>
     private let surface = UIView()
+    private let icon = UIImageView()
     private let pageSize: CGSize
     private let source: CGRect
     private var capture: UIView?
@@ -245,6 +246,11 @@ final class AppWindowView: UIView {
         host.view.insetsLayoutMarginsFromSafeArea = false
         if #available(iOS 16.4, *) { host.safeAreaRegions = [] }
         surface.addSubview(host.view)
+        icon.image = IconArtwork.image(page.slot)
+        icon.contentMode = .scaleToFill
+        icon.frame = surface.bounds
+        icon.isUserInteractionEnabled = false
+        surface.addSubview(icon)
         apply(0)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -252,6 +258,7 @@ final class AppWindowView: UIView {
     func setProgress(_ progress: CGFloat, animated: Bool) {
         let t = min(1, max(0, progress))
         guard t != currentProgress else { return }
+        let startProgress = currentProgress
         currentProgress = t
         animator?.stopAnimation(true)
         if capture == nil {
@@ -259,7 +266,8 @@ final class AppWindowView: UIView {
             host.view.layoutIfNeeded()
             if let snapshot = host.view.snapshotView(afterScreenUpdates: true) {
                 snapshot.frame = CGRect(origin: .zero, size: pageSize)
-                surface.addSubview(snapshot)
+                snapshot.alpha = startProgress
+                surface.insertSubview(snapshot, belowSubview: icon)
                 capture = snapshot
                 host.view.isHidden = true
             }
@@ -289,5 +297,7 @@ final class AppWindowView: UIView {
         surface.center = CGPoint(x: rect.midX, y: rect.midY)
         // A continuous corner is handled by Core Animation instead of a rebuilt path.
         surface.layer.cornerRadius = pageSize.width * 0.24 * (1 - t)
+        icon.alpha = 1 - t
+        capture?.alpha = t
     }
 }
