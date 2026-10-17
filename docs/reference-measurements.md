@@ -24,3 +24,9 @@ SpringBoard is an OS-private implementation; this app recreates its observed mot
 ## Performance and editing update
 
 The resting geometry is retained. Numbered icon art and the default wallpaper are cached images; live Liquid Glass remains on folders and controls. Interactive glass highlights and platform copy-drag previews have been removed. A sequenced long press and direct drag move only the icon. Folder rename operations require a folder with multiple slots, and saved single-slot names are repaired on load. UI verification covers normal navigation, moving 13 to 17’s former cell, dissolving a folder, and keeping the final numbered name after relaunch.
+
+## Calendar opening deformation (latest supplied clip)
+
+The latest 2.182-second recording is 1170 × 2532 at 60 fps. Measurements use a 390 × 844 canvas. Opening starts near 0.467 seconds. The source is approximately (28, 67, 64, 64). At +0.083 seconds the window extends from y=118 to 540, its top straight edge spans x≈11…219 and its bottom edge x≈5…271. At +0.167 seconds it spans y=45…785, with top x≈3…340 and bottom x≈0…369. These are estimated edge intersections, not transparent corner bounds.
+
+`LaunchMorph` interpolates the measured four-edge samples, independently controlling width, height, center and perspective. The early downward movement and unequal top/bottom widths are intentional. For icons elsewhere on Home the measured motion is adapted to the source position; this adaptation is an approximation because the recording supplies only the upper-left launch. A homography projects the same cached icon and page surface; the artwork does not retain a square aspect ratio. A local superellipse mask supplies the changing corners. There is no per-frame SwiftUI layout or snapshot capture. The same deformation and content crossfade thresholds are traversed backward on return. Interactive swipes map size to the sampled timeline to preserve finger tracking.

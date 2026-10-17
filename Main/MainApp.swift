@@ -617,7 +617,7 @@ struct HomeView: View {
         appInteracting = false
         if reduceMotion { withAnimation(appMotion) { appProgress = 0 } }
         else { appProgress = 0 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.52) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.56) {
             if appProgress == 0 { selectedSlot = nil }
         }
     }

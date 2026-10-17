@@ -254,7 +254,7 @@ final class AppWindowView: UIView {
     private var targetProgress: CGFloat = 0
     private var animationFrom: CGFloat = 0
     private var animationStarted: CFTimeInterval = 0
-    private var animationDuration: CFTimeInterval = 0.46
+    private var animationDuration: CFTimeInterval = LaunchMorph.duration
 
     init(page: SlotPage, size: CGSize, source: CGRect) {
         host = UIHostingController(rootView: page)
@@ -263,6 +263,8 @@ final class AppWindowView: UIView {
         super.init(frame: CGRect(origin: .zero, size: size))
         backgroundColor = .clear
         surface.frame = bounds
+        surface.layer.anchorPoint = .zero
+        surface.layer.position = .zero
         contourMask.frame = surface.bounds
         contourMask.fillColor = UIColor.black.cgColor
         contourMask.contentsScale = UIScreen.main.scale
@@ -287,7 +289,8 @@ final class AppWindowView: UIView {
     deinit { displayLink?.invalidate() }
 
     func setProgress(_ progress: CGFloat, animated: Bool) {
-        let t = min(1, max(0, progress))
+        let requested = min(1, max(0, progress))
+        let t = animated ? requested : LaunchMorph.progress(forExpansion: requested)
         if animated && t == targetProgress && displayLink != nil { return }
         if t == currentProgress && displayLink == nil { targetProgress = t; return }
         displayLink?.invalidate()
@@ -297,7 +300,8 @@ final class AppWindowView: UIView {
             host.view.layoutIfNeeded()
             if let snapshot = host.view.snapshotView(afterScreenUpdates: true) {
                 snapshot.frame = CGRect(origin: .zero, size: pageSize)
-                let blend = min(1, max(0, (currentProgress - 0.04) / 0.26))
+                let expansion = LaunchMorph(progress: currentProgress, source: source, screen: pageSize).expansion
+                let blend = min(1, max(0, (expansion - 0.04) / 0.26))
                 snapshot.alpha = blend * blend * (3 - 2 * blend)
                 surface.insertSubview(snapshot, belowSubview: icon)
                 capture = snapshot
@@ -307,7 +311,7 @@ final class AppWindowView: UIView {
         if animated {
             animationFrom = currentProgress
             animationStarted = CACurrentMediaTime()
-            animationDuration = 0.46 * max(0.38, Double(abs(t - currentProgress)))
+            animationDuration = LaunchMorph.duration * max(0.25, Double(abs(t - currentProgress)))
             let clock = WindowAnimationClock(owner: self)
             let link = CADisplayLink(target: clock, selector: #selector(WindowAnimationClock.tick(_:)))
             link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
@@ -321,9 +325,9 @@ final class AppWindowView: UIView {
     }
     fileprivate func advance(_ timestamp: CFTimeInterval) {
         let u = min(1, max(0, (timestamp - animationStarted) / animationDuration))
-        // Fast expansion followed by a gentle settle, using the same curve in
-        // reverse for closing. Only cached surfaces and their mask are updated.
-        let eased = CGFloat(1 - pow(1 - u, 3.3))
+        // The recorded samples already contain acceleration and settling.
+        // Applying another ease-out would skip the initial deformation.
+        let eased = CGFloat(u)
         currentProgress = animationFrom + (targetProgress - animationFrom) * eased
         apply(currentProgress)
         if u >= 1 {
@@ -341,21 +345,20 @@ final class AppWindowView: UIView {
         capture = nil
     }
     private func apply(_ t: CGFloat) {
-        let rect = interpolatedRect(source, CGRect(origin: .zero, size: pageSize), t)
-        let sx = max(0.001, rect.width / pageSize.width)
-        let sy = max(0.001, rect.height / pageSize.height)
+        let morph = LaunchMorph(progress: t, source: source, screen: pageSize)
+        let sx = max(0.001, morph.size.width / pageSize.width)
+        let sy = max(0.001, morph.size.height / pageSize.height)
         // At zero, half the icon width yields the exact fourth-order icon
         // contour. As the window lengthens, its corners become local corners
         // rather than an enlarged ellipse stretching over the whole screen.
-        let corner = source.width / 2 + (pageSize.width * 0.12 - source.width / 2) * t
+        let corner = source.width / 2 + (pageSize.width * 0.12 - source.width / 2) * morph.expansion
         var inverseScale = CGAffineTransform(scaleX: 1 / sx, y: 1 / sy)
-        let path = WindowContour(corner: corner).path(in: CGRect(origin: .zero, size: rect.size)).cgPath
-        let blend = min(1, max(0, (t - 0.04) / 0.26))
+        let path = WindowContour(corner: corner).path(in: CGRect(origin: .zero, size: morph.size)).cgPath
+        let blend = min(1, max(0, (morph.expansion - 0.04) / 0.26))
         let pageAlpha = blend * blend * (3 - 2 * blend)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        surface.transform = CGAffineTransform(scaleX: sx, y: sy)
-        surface.center = CGPoint(x: rect.midX, y: rect.midY)
+        surface.layer.transform = morph.transform
         contourMask.path = path.copy(using: &inverseScale)
         surface.layer.mask = t >= 0.9999 ? nil : contourMask
         icon.alpha = 1 - pageAlpha
