@@ -425,7 +425,7 @@ struct HomeView: View {
                         .frame(width: metrics.cell, height: metrics.tileHeight)
                         .position(x: rect.midX + CGFloat(index / 24) * metrics.size.width,
                                   y: rect.minY + metrics.tileHeight / 2)
-                        .opacity(draggedItem?.id == item.id || folderID == item.id || (selectedSlot.map { item.slots == [$0] } ?? false) ? 0 : 1)
+                        .opacity(folderID == item.id || (selectedSlot.map { item.slots == [$0] } ?? false) ? 0 : 1)
                 }
             }.frame(width: metrics.size.width, height: metrics.size.height, alignment: .topLeading)
             .offset(x: -CGFloat(page) * metrics.size.width + pagePan)
@@ -470,11 +470,32 @@ struct HomeView: View {
                     .frame(width: metrics.cell, height: metrics.labelHeight)
                     .shadow(color: .black.opacity(0.35), radius: 1, y: 1)
             }.frame(width: metrics.cell, height: metrics.tileHeight).contentShape(Rectangle())
+                .opacity(draggedItem?.id == item.id ? 0 : 1)
                 .modifier(EditingWiggle(active: editing && draggedItem?.id != item.id,
                                         seed: item.slots.first ?? 0,
                                         anchor: UnitPoint(x: 0.5, y: metrics.icon / (2 * metrics.tileHeight))))
         }.buttonStyle(IconPressStyle())
             .accessibilityLabel(item.isFolder ? "\(item.name)、\(item.slots.count)個のアプリ" : "アプリ \(item.displayName)")
+            .overlay {
+                IconTouchSurface(
+                    exclusion: editing ? CGRect(x: (metrics.cell - metrics.icon) / 2 - 7, y: -7, width: 24, height: 24) : nil,
+                    prepare: { liftFeedback.prepare() },
+                    tap: {
+                        guard !editing && Date() > suppressTapUntil else { return }
+                        openItem(item, source: rect)
+                    },
+                    began: { beginHomeLift(item, rect: rect) },
+                    changed: { translation in
+                        if draggedItem == nil && hypot(translation.width, translation.height) > 6 { startHomeDrag(item) }
+                        if draggedItem != nil { updateHomeLift(translation, metrics: metrics) }
+                    },
+                    ended: { translation in
+                        if draggedItem != nil {
+                            updateHomeLift(translation, metrics: metrics)
+                            finishMove(item)
+                        } else { cancelLift() }
+                    }, cancelled: cancelLift)
+            }
             .overlay(alignment: .topLeading) {
                 if editing {
                     Button { removalItem = item } label: {
@@ -482,32 +503,11 @@ struct HomeView: View {
                             .foregroundStyle(.black).frame(width: 24, height: 24)
                             .background(.white.opacity(0.9), in: Circle())
                     }.buttonStyle(.plain)
+                        .opacity(draggedItem?.id == item.id ? 0 : 1)
                         .offset(x: (metrics.cell - metrics.icon) / 2 - 7, y: -7)
                         .accessibilityLabel("\(item.displayName)をホーム画面から取り除く")
                 }
             }
-            .simultaneousGesture(LongPressGesture(minimumDuration: 0.22, maximumDistance: 12)
-                .onChanged { _ in liftFeedback.prepare() }
-                .onEnded { recognized in
-                    if recognized { beginHomeLift(item, rect: rect) }
-                }
-                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("home")))
-                .onChanged { value in
-                    if case .second(true, let drag) = value {
-                        beginHomeLift(item, rect: rect)
-                        if let drag {
-                            if draggedItem == nil && hypot(drag.translation.width, drag.translation.height) > 6 {
-                                startHomeDrag(item)
-                            }
-                            if draggedItem != nil { updateHomeLift(drag.translation, metrics: metrics) }
-                        }
-                    }
-                }.onEnded { value in
-                    if case .second(true, let drag) = value, let drag, draggedItem != nil {
-                        updateHomeLift(drag.translation, metrics: metrics)
-                        finishMove(item)
-                    } else { cancelLift() }
-                })
     }
     private func openItem(_ item: HomeItem, source: CGRect) {
         if item.isFolder {
