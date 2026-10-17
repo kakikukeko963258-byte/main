@@ -36,8 +36,8 @@ struct LaunchMorph {
         .init(time: 20/60, leftTop: 1, rightTop: 387, leftBottom: 0, rightBottom: 390, top: 2, bottom: 843),
         .init(time: 26/60, leftTop: 0, rightTop: 390, leftBottom: 0, rightBottom: 390, top: 0, bottom: 844)
     ]
-    static let openingDuration: CFTimeInterval = 0.44
-    static let closingDuration: CFTimeInterval = 0.40
+    static let openingDuration: CFTimeInterval = 0.48
+    static let closingDuration: CFTimeInterval = 0.46
     private static let sampledDuration: CGFloat = 26 / 60
 
     private static func sample(_ progress: CGFloat) -> Sample {
@@ -66,8 +66,22 @@ struct LaunchMorph {
         (sample(progress).height - 64) / 780
     }
 
+    static func springResponse(_ time: Double, opening: Bool) -> CGFloat {
+        guard time > 0 else { return 0 }
+        guard time < 1 else { return 1 }
+        let damping = opening ? 0.72 : 0.76
+        let frequency = opening ? 8.0 : 8.7
+        let root = sqrt(1 - damping * damping)
+        func response(_ t: Double) -> Double {
+            let phase = frequency * root * t
+            return 1 - exp(-damping * frequency * t) * (cos(phase) + damping / root * sin(phase))
+        }
+        return CGFloat(response(time) / response(1))
+    }
+
     let transform: CATransform3D
     let size: CGSize
+    let center: CGPoint
     let expansion: CGFloat
 
     init(progress: CGFloat, source: CGRect, screen: CGSize) {
@@ -81,6 +95,7 @@ struct LaunchMorph {
         let cyProgress = ((s.top + s.bottom) / 2 - 99) / 323
         let cx = source.midX + (screen.width / 2 - source.midX) * cxProgress
         let cy = source.midY + (screen.height / 2 - source.midY) * cyProgress
+        center = CGPoint(x: cx, y: cy)
         // Reflect the perspective for icons in the lower/right part of Home.
         let verticalOffset = max(-1.3, min(1.3, (screen.height / 2 - source.midY) / (screen.height * 323 / 844)))
         let taper = (s.rightBottom - s.leftBottom - s.rightTop + s.leftTop) / s.width * verticalOffset
