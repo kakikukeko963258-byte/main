@@ -346,7 +346,7 @@ struct HomeView: View {
                 dragTranslation = translation
                 let point = CGPoint(x: dragOrigin.midX + translation.width, y: dragOrigin.midY + translation.height)
                 guard var slots = folderPreview, let from = slots.firstIndex(of: slot),
-                      let to = slots.indices.first(where: { metrics.folderIconRect($0 % 9).insetBy(dx: -8, dy: -12).contains(point) }),
+                      let to = slots.indices.first(where: { $0 / 9 == from / 9 && metrics.folderIconRect($0 % 9).insetBy(dx: -8, dy: -12).contains(point) }),
                       from != to else { return }
                 slots.remove(at: from)
                 slots.insert(slot, at: to)
