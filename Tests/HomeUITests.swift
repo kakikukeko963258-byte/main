@@ -27,13 +27,13 @@ final class HomeUITests: XCTestCase {
         app.buttons["ホームへ戻る"].tap()
         XCTAssertTrue(app.buttons["フォルダを閉じる"].waitForExistence(timeout: 5))
         app.buttons["フォルダを閉じる"].tap()
-        app.buttons["アプリ 32"].tap()
+        tapVisibleIcon(app.buttons["アプリ 32"], in: app)
         XCTAssertTrue(app.staticTexts["ページ 32"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.navigationBars.count, 0)
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
             .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
         XCTAssertTrue(app.buttons["アプリ 32"].waitForExistence(timeout: 5), "戻るスワイプが動く")
-        app.buttons["アプリ 32"].tap()
+        tapVisibleIcon(app.buttons["アプリ 32"], in: app)
         XCTAssertTrue(app.staticTexts["ページ 32"].waitForExistence(timeout: 5))
         app.buttons["ホームへ戻る"].tap()
         XCTAssertTrue(app.buttons["アプリ 1"].waitForExistence(timeout: 5))
@@ -122,6 +122,21 @@ final class HomeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["アプリ 2"].waitForExistence(timeout: 5))
         app.buttons["アプリ 2"].tap()
         XCTAssertTrue(app.staticTexts["ページ 2"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    private func tapVisibleIcon(_ button: XCUIElement, in app: XCUIApplication) {
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        let frame = button.frame
+        let point = CGPoint(x: frame.midX, y: frame.minY + frame.height * 0.35)
+        guard frame.width > 0, frame.height > 0, app.frame.contains(point) else {
+            XCTFail("アイコンの実際のタップ位置が画面内にある")
+            return
+        }
+        // iOS 26 sometimes reports hit point (-1,-1) for a SwiftUI Button
+        // overlaid by our UIKit touch surface after dismissing a folder.
+        // Tap the visible icon itself; still require the real page to appear.
+        button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
     }
 
     @MainActor
