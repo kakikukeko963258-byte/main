@@ -3,17 +3,35 @@ options:
   bundleIdPrefix: com.kakikukeko
   deploymentTarget:
     iOS: '16.0'
+settings:
+  base:
+    APP_GROUP: group.com.kakikukeko.main.pcfilebridge
 targets:
   main:
     type: application
     platform: iOS
-    sources: [Main]
+    sources: [Main, BridgeShared]
+    dependencies:
+      - target: PCFileBridgeFileProvider
+        embed: true
+    info:
+      path: Main/Info.plist
+      properties:
+        CFBundleDisplayName: main
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSLocalNetworkUsageDescription: Windows PCを検出し、選択した共有フォルダーへ接続します。
+        NSBonjourServices: [_pcfilebridge._tcp]
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        PCFileBridgeAppGroup: $(APP_GROUP)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kakikukeko.main
         PRODUCT_NAME: main
         INFOPLIST_KEY_CFBundleDisplayName: main
-        GENERATE_INFOPLIST_FILE: YES
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: Main/Main.entitlements
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         TARGETED_DEVICE_FAMILY: '1'
@@ -21,6 +39,22 @@ targets:
         MARKETING_VERSION: '1.0.0'
         CURRENT_PROJECT_VERSION: '1'
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  PCFileBridgeFileProvider:
+    type: app-extension
+    platform: iOS
+    sources: [FileProviderExtension, BridgeShared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kakikukeko.main.FileProvider
+        PRODUCT_NAME: PCFileBridgeFileProvider
+        INFOPLIST_FILE: FileProviderExtension/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: FileProviderExtension/FileProviderExtension.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        SWIFT_VERSION: '5.0'
+        MARKETING_VERSION: '1.0.0'
+        CURRENT_PROJECT_VERSION: '1'
   mainUITests:
     type: bundle.ui-testing
     platform: iOS

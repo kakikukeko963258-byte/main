@@ -69,6 +69,29 @@ final class HomeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["アプリ 7"].waitForExistence(timeout: 5))
     }
     @MainActor
+    func testPCFileBridgePageAndReturn() {
+        addUIInterruptionMonitor(withDescription: "Local network access") { alert in
+            for name in ["Allow", "許可", "OK"] {
+                if alert.buttons[name].exists { alert.buttons[name].tap(); return true }
+            }
+            return false
+        }
+        let app = XCUIApplication()
+        app.launch()
+        let first = app.buttons["アプリ 1"]
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        first.tap()
+        XCTAssertTrue(app.navigationBars["PC File Bridge"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.textFields["PC画面の6桁コード"].exists)
+        XCTAssertTrue(app.buttons["ペアリングしてFilesに追加"].exists)
+        capture("07-pc-file-bridge")
+        app.buttons["ホームへ戻る"].tap()
+        XCTAssertTrue(app.buttons["アプリ 2"].waitForExistence(timeout: 5))
+        app.buttons["アプリ 2"].tap()
+        XCTAssertTrue(app.staticTexts["ページ 2"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     private func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name

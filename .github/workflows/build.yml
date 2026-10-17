@@ -22,11 +22,7 @@ jobs:
           set -euo pipefail
           xcodebuild -project main.xcodeproj -scheme main -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
       - name: Package AltStore IPA
-        run: |
-          mkdir -p dist/Payload
-          cp -R build/Build/Products/Release-iphoneos/main.app dist/Payload/
-          cd dist
-          /usr/bin/zip -qr main.ipa Payload
+        run: bash scripts/package-ipa.sh
       - uses: actions/upload-artifact@v4
         with:
           name: main-ipa
@@ -71,5 +67,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="build-${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" dist/main.ipa --title "main build ${GITHUB_RUN_NUMBER}" --notes "Reference home layout, 32 numbered apps with animated folders and Liquid Glass. Install with configured AltForge Remote (re-signing required)." --target "$GITHUB_SHA"
+          gh release create "$TAG" dist/main.ipa --title "main build ${GITHUB_RUN_NUMBER}" --notes "PC File Bridge in slot 1, with the existing animated home and File Provider extension. Install with configured AltForge Remote (re-signing required)." --target "$GITHUB_SHA"
 

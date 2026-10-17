@@ -542,36 +542,50 @@ struct SlotPage: View {
     let dragChanged: (CGFloat) -> Void
     let dragEnded: (Bool) -> Void
     var body: some View {
-        ZStack {
-            Wallpaper(image: wallpaper)
-            Color.black.opacity(0.15).ignoresSafeArea()
-            VStack(spacing: 24) {
-                SlotIcon(slot: slot).frame(width: 100, height: 100)
-                Text("\(slot)").font(.system(size: 76, weight: .light, design: .rounded))
-                Text("ページ \(slot)").font(.title3)
-            }
-            VStack {
-                HStack {
-                    Button(action: close) {
-                        Image(systemName: "chevron.left").font(.system(size: 19, weight: .semibold))
-                            .frame(width: 48, height: 48).homeGlass(24)
-                    }.accessibilityLabel("ホームへ戻る")
-                    Spacer()
-                }.padding(.horizontal, 24).padding(.top, safeTop + 12)
-                Spacer()
-            }
-        }.foregroundStyle(.white)
-            .gesture(DragGesture().onChanged { value in
-                if value.startLocation.x < 40 {
-                    dragChanged(max(0, value.translation.width))
-                } else if value.translation.height > abs(value.translation.width) {
-                    dragChanged(max(0, value.translation.height))
+        if slot == 1 {
+            PCFileBridgeView(onHome: close)
+                .padding(.top, safeTop)
+                .padding(.bottom, 16)
+                .background(Color(uiColor: .systemGroupedBackground))
+                .simultaneousGesture(DragGesture().onChanged { value in
+                    if value.startLocation.x < 24 && value.translation.width > abs(value.translation.height) {
+                        dragChanged(max(0, value.translation.width))
+                    }
+                }.onEnded { value in
+                    guard value.startLocation.x < 24 else { return }
+                    dragEnded(value.translation.width > 100 || value.predictedEndTranslation.width > 220)
+                })
+        } else {
+            ZStack {
+                Wallpaper(image: wallpaper)
+                Color.black.opacity(0.15).ignoresSafeArea()
+                VStack(spacing: 24) {
+                    SlotIcon(slot: slot).frame(width: 100, height: 100)
+                    Text("\(slot)").font(.system(size: 76, weight: .light, design: .rounded))
+                    Text("ページ \(slot)").font(.title3)
                 }
-            }.onEnded { value in
-                let distance = value.startLocation.x < 40 ? value.translation.width : value.translation.height
-                let predicted = value.startLocation.x < 40 ? value.predictedEndTranslation.width : value.predictedEndTranslation.height
-                dragEnded(distance > 100 || predicted > 220)
-            })
+                VStack {
+                    HStack {
+                        Button(action: close) {
+                            Image(systemName: "chevron.left").font(.system(size: 19, weight: .semibold))
+                                .frame(width: 48, height: 48).homeGlass(24)
+                        }.accessibilityLabel("ホームへ戻る")
+                        Spacer()
+                    }.padding(.horizontal, 24).padding(.top, safeTop + 12)
+                    Spacer()
+                }
+            }.foregroundStyle(.white)
+                .gesture(DragGesture().onChanged { value in
+                    if value.startLocation.x < 40 {
+                        dragChanged(max(0, value.translation.width))
+                    } else if value.translation.height > abs(value.translation.width) {
+                        dragChanged(max(0, value.translation.height))
+                    }
+                }.onEnded { value in
+                    let distance = value.startLocation.x < 40 ? value.translation.width : value.translation.height
+                    let predicted = value.startLocation.x < 40 ? value.predictedEndTranslation.width : value.predictedEndTranslation.height
+                    dragEnded(distance > 100 || predicted > 220)
+                })
+        }
     }
 }
-
