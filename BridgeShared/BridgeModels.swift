@@ -8,6 +8,7 @@ struct BridgeItem: Codable, Identifiable, Hashable {
     let size: Int64
     let modifiedUtc: Date
     let version: String
+    var readOnly: Bool? = nil
 }
 
 struct ItemPage: Codable {

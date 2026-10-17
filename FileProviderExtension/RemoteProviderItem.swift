@@ -16,6 +16,9 @@ final class RemoteProviderItem: NSObject, NSFileProviderItemProtocol {
         return UTType(filenameExtension: URL(fileURLWithPath: remote.name).pathExtension) ?? .data
     }
     var capabilities: NSFileProviderItemCapabilities {
+        if remote.readOnly == true {
+            return remote.isDirectory ? [.allowsReading, .allowsContentEnumerating] : [.allowsReading, .allowsEvicting]
+        }
         if remote.isDirectory {
             let base: NSFileProviderItemCapabilities = [.allowsReading, .allowsContentEnumerating, .allowsAddingSubItems]
             return remote.parentId == "root" ? base : base.union([.allowsDeleting, .allowsRenaming, .allowsReparenting])

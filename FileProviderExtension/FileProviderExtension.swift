@@ -15,6 +15,12 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
 
     func item(for identifier: NSFileProviderItemIdentifier, request: NSFileProviderRequest, completionHandler: @escaping (NSFileProviderItem?, (any Error)?) -> Void) -> Progress {
         let progress = Progress(totalUnitCount: -1)
+        if identifier == .rootContainer {
+            let server = SharedConfiguration.server(forDomain: domain.identifier.rawValue)
+            let root = BridgeItem(id: NSFileProviderItemIdentifier.rootContainer.rawValue, parentId: "root", name: server?.name ?? domain.displayName, isDirectory: true, size: 0, modifiedUtc: server?.addedAt ?? Date(timeIntervalSince1970: 0), version: "root-1", readOnly: true)
+            completionHandler(RemoteProviderItem(root), nil)
+            return progress
+        }
         let task = Task {
             do {
                 let client = try makeClient()
