@@ -513,7 +513,10 @@ FolderTransitionLayer(progress: reduceMotion ? 1 : folderProgress,
                         }.buttonStyle(IconPressStyle()).accessibilityLabel("検索アプリ \(slot)")
                             .contextMenu {
                                 if store.hiddenSlots.contains(slot) {
-                                    Button("ホーム画面に戻す") { store.restore(slot) }
+                                    Button("ホーム画面に戻す") {
+                                        store.restore(slot)
+                                        page = max(0, (store.items.count - 1) / 24)
+                                    }
                                 }
                             }
                     }
