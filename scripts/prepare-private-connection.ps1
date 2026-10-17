@@ -21,7 +21,7 @@ try {
     if (!$process.WaitForExit(12000)) { $process.Kill(); throw '起動中のPC File Bridgeから設定を取得できませんでした。' }
     if ($process.ExitCode -ne 0) { throw 'PC File Bridgeを起動してから再実行してください。' }
     $setup = Get-Content -LiteralPath $temporarySetup -Raw | ConvertFrom-Json
-    if ($setup.version -ne 1 -or [DateTimeOffset]::Parse($setup.expiresUtc) -le [DateTimeOffset]::UtcNow) { throw '初回設定が期限切れです。' }
+    if ($setup.version -ne 1 -or [DateTimeOffset]$setup.expiresUtc -le [DateTimeOffset]::UtcNow) { throw '初回設定が期限切れです。' }
     Copy-Item -LiteralPath $source -Destination $destination
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::Open($destination, [IO.Compression.ZipArchiveMode]::Update)
