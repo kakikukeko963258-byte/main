@@ -2,6 +2,24 @@ import XCTest
 
 final class HomeUITests: XCTestCase {
     @MainActor
+    func testYouTubeHapticsInput() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-haptics-direct-ui-test"]
+        app.launch()
+        let field = app.textFields["haptics-link"]
+        XCTAssertTrue(field.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["haptics-convert"].isEnabled)
+        field.tap()
+        field.typeText("https://example.com/not-youtube")
+        app.buttons["haptics-convert"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        capture("youtube-haptics-invalid-link")
+        app.alerts.buttons["OK"].tap()
+        app.buttons["ホームへ戻る"].tap()
+        XCTAssertTrue(app.buttons["アプリ 1"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     func testChargingMonitor() {
         let app = XCUIApplication()
         app.launchArguments = ["-charging-direct-ui-test"]

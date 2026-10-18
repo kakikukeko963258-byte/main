@@ -22,6 +22,7 @@ jobs:
     runs-on: macos-26
     env:
       RUN_UI_CHECKS: ${{ !contains(github.event.head_commit.message, '[skip ui]') && !inputs.skip_ui_checks }}
+      ONLY_HAPTICS: ${{ contains(github.event.head_commit.message, '[haptics]') }}
       ONLY_LISTENING: ${{ inputs.only_listening || false }}
       ONLY_CHARGING: ${{ contains(github.event.head_commit.message, '[charging]') }}
     steps:
@@ -34,6 +35,10 @@ jobs:
         run: |
           swiftc Main/Charging/ChargeEstimator.swift Main/Charging/ChargingHistory.swift scripts/ChargeEstimatorChecks.swift -o /tmp/charge-checks
           /tmp/charge-checks
+      - name: Verify YouTube links and AHAPpy conversion
+        run: |
+          swiftc -parse-as-library Main/YouTubeHaptics/YouTubeLink.swift Main/YouTubeHaptics/Vendor/AHAPpyConverter.swift Main/YouTubeHaptics/HapticAnalysis.swift scripts/HapticChecks.swift -o /tmp/haptic-checks
+          /tmp/haptic-checks
       - name: Build iPhone app
         run: |
           set -euo pipefail
@@ -78,6 +83,9 @@ jobs:
           fi
           if [ "$ONLY_LISTENING" = "true" ]; then
             TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testListeningChapterPlaybackAndHighlight)
+          fi
+          if [ "$ONLY_HAPTICS" = "true" ]; then
+            TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testYouTubeHapticsInput)
           fi
           xcodebuild test -project main.xcodeproj -scheme main -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 -derivedDataPath simulator-build -resultBundlePath TestResults.xcresult "${TEST_FILTER[@]}" CODE_SIGNING_ALLOWED=NO
           kill -INT "$RECORD_PID" 2>/dev/null || true

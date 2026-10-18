@@ -6,12 +6,17 @@ options:
 settings:
   base:
     APP_GROUP: group.com.kakikukeko.main.pcfilebridge
+packages:
+  YouTubeKit:
+    url: https://github.com/alexeichhorn/YouTubeKit.git
+    revision: e5b7d0396ce12bf3444f0d209e8436c83373b7af
 targets:
   main:
     type: application
     platform: iOS
     sources: [Main, BridgeShared, ChargingShared]
     dependencies:
+      - package: YouTubeKit
       - target: ChargingWidget
         embed: true
       - target: PCFileBridgeFileProvider

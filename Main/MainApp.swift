@@ -6,10 +6,12 @@ struct MainApp: App {
     @Environment(\.scenePhase) private var chargingScenePhase
     @State private var directCharging = ProcessInfo.processInfo.arguments.contains("-charging-direct-ui-test")
     @State private var directListening = ProcessInfo.processInfo.arguments.contains("-listening-direct-ui-test")
+    @State private var directHaptics = ProcessInfo.processInfo.arguments.contains("-haptics-direct-ui-test")
     var body: some Scene {
         WindowGroup {
             Group {
-                if directCharging { ChargingView(onHome: { directCharging = false }) }
+                if directHaptics { YouTubeHapticsView(onHome: { directHaptics = false }) }
+                else if directCharging { ChargingView(onHome: { directCharging = false }) }
                 else if directListening { ListeningView(onHome: { directListening = false }) }
                 else { HomeView() }
             }.preferredColorScheme(.dark)
@@ -1082,7 +1084,12 @@ struct SlotPage: View {
     let dragChanged: (CGFloat) -> Void
     let dragEnded: (Bool) -> Void
     var body: some View {
-        if slot == 3 {
+        if slot == 4 {
+            YouTubeHapticsView(onHome: close)
+                .padding(.top, safeTop)
+                .padding(.bottom, 16)
+                .background(Color(uiColor: .systemGroupedBackground))
+        } else if slot == 3 {
             ChargingView(onHome: close)
                 .padding(.top, safeTop)
                 .padding(.bottom, 16)
