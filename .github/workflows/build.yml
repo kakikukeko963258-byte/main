@@ -99,5 +99,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="build-${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" dist/main.ipa --title "main build ${GITHUB_RUN_NUMBER}" --notes "PC File Bridge in slot 1, with the existing animated home and File Provider extension. Install with configured AltForge Remote (re-signing required)." --target "$GITHUB_SHA"
+          gh release create "$TAG" dist/main.ipa --title "main build ${GITHUB_RUN_NUMBER}" --notes "Charging monitor in slot 3, listening in slot 2, PC File Bridge in slot 1. Includes Live Activity, WidgetKit, File Provider and embedded WDA. iPhone 17e sensor mapping requires device verification. Install with configured AltForge Remote and retain extensions (re-signing required)." --target "$GITHUB_SHA"
 

@@ -25,7 +25,20 @@ struct ChargingAttributes: ActivityAttributes {
 }
 
 enum ChargingCache {
-    static let suite = "group.com.kakikukeko.main.pcfilebridge"
+    static let suite: String = {
+        let base = "group.com.kakikukeko.main.pcfilebridge"
+        var groups = Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? []
+        if let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+           let data = try? Data(contentsOf: url),
+           let start = data.range(of: Data("<plist".utf8)),
+           let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
+           let profile = try? PropertyListSerialization.propertyList(from: data.subdata(in: start.lowerBound..<end.upperBound), options: [], format: nil) as? [String: Any],
+           let entitlements = profile["Entitlements"] as? [String: Any] {
+            groups += entitlements["com.apple.security.application-groups"] as? [String] ?? []
+        }
+        return groups.first { ($0 == base || $0.hasPrefix(base + ".")) &&
+            FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) != nil } ?? base
+    }()
     static func load() -> ChargeState {
         guard let data = UserDefaults(suiteName: suite)?.data(forKey: "charging-snapshot"),
               let state = try? JSONDecoder().decode(ChargeState.self, from: data) else { return .empty }

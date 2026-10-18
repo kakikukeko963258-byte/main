@@ -3,13 +3,16 @@ set -euo pipefail
 APP_PATH="build/Build/Products/Release-iphoneos/main.app"
 EXT_PATH="$APP_PATH/PlugIns/PCFileBridgeFileProvider.appex"
 ENTITLEMENTS="$RUNNER_TEMP/bridge.entitlements"
-python3 - "$APP_PATH" "$EXT_PATH" <<'PY'
+python3 - "$APP_PATH" "$EXT_PATH" "$APP_PATH/PlugIns/ChargingWidget.appex" <<'PY'
 import plistlib, sys
 from pathlib import Path
-app, extension = [plistlib.loads((Path(p) / 'Info.plist').read_bytes()) for p in sys.argv[1:]]
-for key in ('CFBundleShortVersionString', 'CFBundleVersion'):
-    assert app[key] == extension[key], f'App and extension differ: {key}'
-assert extension['CFBundleIdentifier'].startswith(app['CFBundleIdentifier'] + '.')
+app, *extensions = [plistlib.loads((Path(p) / 'Info.plist').read_bytes()) for p in sys.argv[1:]]
+for extension in extensions:
+    for key in ('CFBundleShortVersionString', 'CFBundleVersion'):
+        assert app[key] == extension[key], f'App and extension differ: {key}'
+    assert extension['CFBundleIdentifier'].startswith(app['CFBundleIdentifier'] + '.')
+assert app['NSSupportsLiveActivities']
+assert extensions[1]['NSExtension']['NSExtensionPointIdentifier'] == 'com.apple.widgetkit-extension'
 PY
 cat > "$ENTITLEMENTS" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
