@@ -247,6 +247,10 @@ struct HomeView: View {
                                        source: appSource, size: geometry.size, safeTop: safeTop, wallpaper: wallpaper,
                                        close: closeApp,
                                        dragChanged: { amount in
+                                           if appFromSwitcher {
+                                               appSource = homeSource(for: slot)
+                                               appFromSwitcher = false
+                                           }
                                            appInteracting = true
                                            appProgress = 1 - min(0.55, max(0, amount / geometry.size.height))
                                        },
