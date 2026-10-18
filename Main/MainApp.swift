@@ -26,6 +26,7 @@ final class HomeStore: ObservableObject {
     @Published var items: [HomeItem] { didSet { reconcilePages(); save() } }
     @Published private(set) var itemPages: [String: Int] = [:]
     @Published private(set) var pageCount = 1
+    @Published private(set) var dockIDs: [String] = []
     @Published private(set) var hiddenSlots: [Int] = UserDefaults.standard.array(forKey: "hidden-slots") as? [Int] ?? []
     init() {
         if ProcessInfo.processInfo.arguments.contains("-reset-home") {
@@ -34,6 +35,7 @@ final class HomeStore: ObservableObject {
             UserDefaults.standard.removeObject(forKey: "home-item-pages-v1")
             UserDefaults.standard.removeObject(forKey: "home-page-count-v1")
             hiddenSlots = []
+            UserDefaults.standard.removeObject(forKey: "home-dock-v1")
         }
         if let data = UserDefaults.standard.data(forKey: "home-layout-v2"),
            let saved = try? JSONDecoder().decode([HomeItem].self, from: data),
@@ -50,8 +52,17 @@ final class HomeStore: ObservableObject {
         }
         itemPages = UserDefaults.standard.dictionary(forKey: "home-item-pages-v1") as? [String: Int] ?? [:]
         pageCount = max(1, UserDefaults.standard.integer(forKey: "home-page-count-v1"))
+        dockIDs = (UserDefaults.standard.stringArray(forKey: "home-dock-v1") ?? items.suffix(4).map(\.id)).filter { id in items.contains { $0.id == id } }
         reconcilePages()
         save()
+    }
+    func setDock(_ id: String, index: Int?) {
+        dockIDs.removeAll { $0 == id }
+        if let index {
+            if dockIDs.count == 4 { dockIDs.removeLast() }
+            dockIDs.insert(id, at: min(index, dockIDs.count))
+        }
+        reconcilePages(); save()
     }
     func pageNumber(_ id: String) -> Int { itemPages[id] ?? 0 }
     func addPage() -> Int {
@@ -63,7 +74,9 @@ final class HomeStore: ObservableObject {
     private func reconcilePages() {
         var result: [String: Int] = [:]
         var counts: [Int: Int] = [:]
+        dockIDs = dockIDs.filter { id in items.contains { $0.id == id } }
         for item in items {
+            if dockIDs.contains(item.id) { result[item.id] = itemPages[item.id] ?? 0; continue }
             var destination = max(0, itemPages[item.id] ?? 0)
             while counts[destination, default: 0] >= 24 { destination += 1 }
             result[item.id] = destination
@@ -78,6 +91,7 @@ final class HomeStore: ObservableObject {
         }
         UserDefaults.standard.set(itemPages, forKey: "home-item-pages-v1")
         UserDefaults.standard.set(pageCount, forKey: "home-page-count-v1")
+        UserDefaults.standard.set(dockIDs, forKey: "home-dock-v1")
     }
     func removeFromHome(_ id: String) {
         guard let item = items.first(where: { $0.id == id }) else { return }
@@ -126,7 +140,7 @@ final class HomeStore: ObservableObject {
               Set(order.map(\.id)) == Set(items.map(\.id)) else { return }
         let original = pageNumber(id)
         itemPages[id] = destination
-        let residents = order.filter { pageNumber($0.id) == destination }
+        let residents = order.filter { !dockIDs.contains($0.id) && pageNumber($0.id) == destination }
         if residents.count > 24, let overflow = residents.last(where: { $0.id != id }) {
             itemPages[overflow.id] = original
         }
@@ -218,6 +232,7 @@ struct IconPressStyle: ButtonStyle {
 
 struct HomeView: View {
     @StateObject private var store = HomeStore()
+    @StateObject private var editingClock = EditingClock()
     @StateObject private var recentApps = RecentApps()
     @State private var switcherVisible = false
     @State private var appPreviewRequest = 0
@@ -237,6 +252,13 @@ struct HomeView: View {
     @State private var safeBottom: CGFloat = 34
     @State private var pagePan: CGFloat = 0
     @State private var edgeDirection = 0
+    @State private var edgeToken = UUID()
+    @State private var hoverToken = UUID()
+    @State private var expandedHover: String?
+    @State private var dockDrop: Int?
+    @State private var landingItem: HomeItem?
+    @State private var landingRect = CGRect.zero
+    @State private var landingToken = UUID()
     @State private var page = 0
     @State private var showSearch = false
     @State private var query = ""
@@ -338,17 +360,25 @@ struct HomeView: View {
                         .transaction { $0.animation = nil }
                         .allowsHitTesting(false).accessibilityHidden(true).zIndex(20)
                 }
+                if let item = landingItem {
+                    Group {
+                        if item.isFolder { FolderIcon(item: item) }
+                        else { SlotIcon(slot: item.slots[0]) }
+                    }.frame(width: landingRect.width, height: landingRect.height)
+                        .position(x: landingRect.midX, y: landingRect.midY)
+                        .allowsHitTesting(false).zIndex(21)
+                }
                 if editing && draggedItem == nil {
                     HStack(spacing: 16) {
                         if folderID == nil {
                             Button {
                                 let next = store.addPage()
                                 withAnimation(reorderMotion) { page = next }
-                            } label: { Label("ページを追加", systemImage: "plus.rectangle") }
-                                .padding(.horizontal, 14).padding(.vertical, 9).homeGlass(24)
+                            } label: { Label("ページを追加", systemImage: "plus.rectangle")
+                                .padding(.horizontal, 14).frame(height: 44).contentShape(Rectangle()).homeGlass(24) }
                         }
-                        Button("完了", action: finishEditing)
-                            .padding(.horizontal, 16).padding(.vertical, 9).homeGlass(24)
+                        Button(action: finishEditing) { Text("完了")
+                            .padding(.horizontal, 16).frame(height: 44).contentShape(Rectangle()).homeGlass(24) }
                     }.buttonStyle(.plain).font(.system(size: 15, weight: .semibold))
                         .position(x: geometry.size.width / 2, y: geometry.size.height * 1706.5 / 2048).zIndex(25)
                 }
@@ -356,9 +386,9 @@ struct HomeView: View {
                     Button(action: presentSwitcher) {
                         Image(systemName: "rectangle.on.rectangle")
                             .font(.system(size: 16, weight: .medium))
-                            .frame(width: 46, height: 30).homeGlass(18)
+                            .frame(width: 46, height: 36).contentShape(Rectangle()).homeGlass(18)
                     }.buttonStyle(.plain).accessibilityLabel("最近使ったアプリを開く")
-                        .position(x: geometry.size.width / 2, y: geometry.size.height - safeBottom - 18)
+                        .position(x: geometry.size.width * 0.77, y: geometry.size.height * 1706.5 / 2048)
                         .zIndex(28)
                 }
                 if switcherVisible {
@@ -397,6 +427,8 @@ struct HomeView: View {
                 pagePan = 0
             }
         }
+        .environmentObject(editingClock)
+        .onChange(of: editing) { editingClock.setActive($0) }
         .sheet(isPresented: $showSearch) { searchSheet }
         .task {
             for slot in 1...32 { _ = IconArtwork.image(slot) }
@@ -457,7 +489,7 @@ struct HomeView: View {
                     }
                 }
             },
-            draggingSlot: folderDraggedSlot,
+            draggingSlot: folderDraggedSlot ?? (landingItem?.id == "folder-drag" ? landingItem?.slots.first : nil),
             dragChanged: { slot, translation in
                 if folderDraggedSlot == nil && hypot(translation.width, translation.height) > 6 {
                     startFolderDrag(slot, item: item)
@@ -465,6 +497,8 @@ struct HomeView: View {
                 guard folderDraggedSlot != nil else { return }
                 dragTranslation = translation
                 let point = CGPoint(x: dragOrigin.midX + translation.width, y: dragOrigin.midY + translation.height)
+                if !metrics.folderRect.contains(point) { updateEdgePaging(point, width: metrics.size.width) }
+                else { updateEdgePaging(CGPoint(x: metrics.size.width / 2, y: point.y), width: metrics.size.width) }
                 guard var slots = folderPreview, let from = slots.firstIndex(of: slot),
                       let to = slots.indices.first(where: { $0 / 9 == from / 9 && metrics.folderIconRect($0 % 9).insetBy(dx: -8, dy: -12).contains(point) }),
                       from != to else { return }
@@ -482,10 +516,18 @@ struct HomeView: View {
                         if let target = candidates.enumerated().first(where: { metrics.iconRect($0.offset).contains(point) })?.element {
                             store.move(source: extracted.id, target: target.id)
                         }
-                        store.place(extracted.id, on: page, order: store.items)
+                        if point.y > dockRect(0, metrics: metrics).minY - 12 {
+                            store.setDock(extracted.id, index: min(3, max(0, Int(point.x / metrics.size.width * 4))))
+                        } else { store.place(extracted.id, on: page, order: store.items) }
+                        let target = itemRect(extracted, metrics: metrics)
+                        animateLanding(extracted, to: target)
                     }
                     closeFolder()
-                } else if let slots = folderPreview { store.orderSlots(slots, in: id) }
+                } else if let slots = folderPreview {
+                    store.orderSlots(slots, in: id)
+                    let child = HomeItem(id: "folder-drag", name: String(slot), slots: [slot])
+                    animateLanding(child, to: metrics.folderIconRect((slots.firstIndex(of: slot) ?? 0) % 9))
+                }
                 cancelLift()
                 suppressTapUntil = Date().addingTimeInterval(0.25)
             },
@@ -508,16 +550,29 @@ struct HomeView: View {
         if draggedItem?.id == item.id, let target = dragTargetPage { return target }
         if let dragged = draggedItem, let target = dragTargetPage,
            target != store.pageNumber(dragged.id), store.pageNumber(item.id) == target {
-            let residents = displayedItems.filter { $0.id != dragged.id && store.pageNumber($0.id) == target }
+            let residents = displayedItems.filter { !store.dockIDs.contains($0.id) && $0.id != dragged.id && store.pageNumber($0.id) == target }
             if residents.count >= 24 && residents.last?.id == item.id { return store.pageNumber(dragged.id) }
         }
         return store.pageNumber(item.id)
     }
     private func localIndex(_ item: HomeItem) -> Int {
-        displayedItems.filter { displayPage($0) == displayPage(item) }.firstIndex(where: { $0.id == item.id }) ?? 0
+        displayedItems.filter { !store.dockIDs.contains($0.id) && displayPage($0) == displayPage(item) }.firstIndex(where: { $0.id == item.id }) ?? 0
+    }
+    private func dockRect(_ index: Int, metrics: HomeMetrics) -> CGRect {
+        CGRect(x: metrics.size.width * (0.075 + CGFloat(index) * 0.231),
+               y: metrics.size.height - safeBottom - metrics.icon - 12,
+               width: metrics.icon, height: metrics.icon)
+    }
+    private func itemRect(_ item: HomeItem, metrics: HomeMetrics) -> CGRect {
+        if let index = store.dockIDs.firstIndex(of: item.id) { return dockRect(index, metrics: metrics) }
+        return metrics.iconRect(localIndex(item))
     }
     private func homePages(_ metrics: HomeMetrics) -> some View {
         ZStack {
+            RoundedRectangle(cornerRadius: 34, style: .continuous)
+                .fill(.clear).frame(width: metrics.size.width * 0.94, height: metrics.icon + 24)
+                .homeGlass(34)
+                .position(x: metrics.size.width / 2, y: metrics.size.height - safeBottom - metrics.icon / 2)
             // One stable ForEach keeps the touched view alive while its slot changes,
             // including a move across a page boundary. Only positions animate.
             ZStack(alignment: .topLeading) {
@@ -525,11 +580,12 @@ struct HomeView: View {
                     .frame(width: CGFloat(store.pageCount) * metrics.size.width,
                            height: metrics.size.height)
                     .contentShape(Rectangle()).onTapGesture(perform: finishEditing)
+                    .onLongPressGesture(minimumDuration: 0.35) { liftFeedback.fire(); editing = true }
                 ForEach(displayedItems) { item in
-                    let rect = metrics.iconRect(localIndex(item))
+                    let rect = itemRect(item, metrics: metrics)
                     homeTile(item, metrics: metrics, rect: rect)
                         .frame(width: metrics.cell, height: metrics.tileHeight)
-                        .position(x: rect.midX + CGFloat(displayPage(item)) * metrics.size.width,
+                        .position(x: rect.midX + CGFloat(store.dockIDs.contains(item.id) ? page : displayPage(item)) * metrics.size.width,
                                   y: rect.minY + metrics.tileHeight / 2)
                         .opacity(folderID == item.id || (selectedSlot.map { item.slots == [$0] } ?? false) ? 0 : 1)
                 }
@@ -551,12 +607,12 @@ struct HomeView: View {
                 }
             })
             if store.pageCount > 1 {
-                HStack(spacing: 8) {
+                HStack(spacing: 0) {
                     if store.pageCount <= 9 {
                         ForEach(0..<store.pageCount, id: \.self) { number in
                             Button { withAnimation(reorderMotion) { page = number } } label: {
                                 Circle().fill(.white.opacity(number == page ? 1 : 0.35)).frame(width: 6, height: 6)
-                                    .padding(.vertical, 8)
+                                    .frame(width: 24, height: 30).contentShape(Rectangle())
                             }.buttonStyle(.plain).accessibilityLabel("ページ \(number + 1)")
                         }
                     } else { Text("\(page + 1) / \(store.pageCount)").font(.system(size: 12)) }
@@ -569,7 +625,7 @@ struct HomeView: View {
                     Text("検索").font(.system(size: metrics.label, weight: .medium))
                 }
                 .frame(width: metrics.size.width * 146 / 947, height: metrics.size.height * 73 / 2048)
-                .homeGlass(40)
+                .contentShape(Rectangle()).homeGlass(40)
             }.buttonStyle(IconPressStyle())
                 .position(x: metrics.size.width / 2, y: metrics.size.height * 1706.5 / 2048)
             }
@@ -586,11 +642,11 @@ struct HomeView: View {
                     else { SlotIcon(slot: item.slots[0]) }
                 }.frame(width: metrics.icon, height: metrics.icon)
                     .overlay(IconContour().stroke(.white.opacity(hoveredID == item.id ? 0.8 : 0), lineWidth: 2))
-                Text(item.displayName).font(.system(size: metrics.label)).lineLimit(1)
+                Text(store.dockIDs.contains(item.id) ? "" : item.displayName).font(.system(size: metrics.label)).lineLimit(1)
                     .frame(width: metrics.cell, height: metrics.labelHeight)
                     .shadow(color: .black.opacity(0.35), radius: 1, y: 1)
             }.frame(width: metrics.cell, height: metrics.tileHeight).contentShape(Rectangle())
-                .opacity(draggedItem?.id == item.id ? 0 : 1)
+                .opacity(draggedItem?.id == item.id || landingItem?.id == item.id ? 0 : 1)
                 .modifier(EditingWiggle(active: editing && draggedItem?.id != item.id,
                                         seed: item.slots.first ?? 0,
                                         anchor: UnitPoint(x: 0.5, y: metrics.icon / (2 * metrics.tileHeight))))
@@ -623,7 +679,7 @@ struct HomeView: View {
                             .foregroundStyle(.black).frame(width: 24, height: 24)
                             .background(.white.opacity(0.9), in: Circle())
                     }.buttonStyle(.plain)
-                        .opacity(draggedItem?.id == item.id ? 0 : 1)
+                        .opacity(draggedItem?.id == item.id || landingItem?.id == item.id ? 0 : 1)
                         .offset(x: (metrics.cell - metrics.icon) / 2 - 7, y: -7)
                         .accessibilityLabel("\(item.displayName)をホーム画面から取り除く")
                 }
@@ -669,13 +725,28 @@ struct HomeView: View {
               let from = preview.firstIndex(where: { $0.id == item.id }) else { return }
         dragTranslation = translation
         let point = CGPoint(x: dragOrigin.midX + translation.width, y: dragOrigin.midY + translation.height)
+        if let expanded = expandedHover {
+            if metrics.folderRect.insetBy(dx: -24, dy: -28).contains(point) { hoveredID = expanded; return }
+            expandedHover = nil; closeFolder(); clearFolderHover()
+        }
+        if point.y > dockRect(0, metrics: metrics).minY - 12 {
+            dockDrop = min(3, max(0, Int(point.x / metrics.size.width * 4)))
+            clearFolderHover(); pendingTarget = nil
+            updateEdgePaging(CGPoint(x: metrics.size.width / 2, y: point.y), width: metrics.size.width)
+            return
+        }
+        dockDrop = nil
         updateEdgePaging(point, width: metrics.size.width)
+        // Keep the candidate stationary until the pointer leaves its icon bounds.
+        if let target = hoveredID, target != item.id,
+           CGRect(x: hoverAnchor.x - metrics.icon * 0.58, y: hoverAnchor.y - metrics.icon * 0.58,
+                  width: metrics.icon * 1.16, height: metrics.icon * 1.16).contains(point) { return }
         guard let local = (0..<24).first(where: { index in
             let rect = metrics.iconRect(index)
             return CGRect(x: rect.midX - metrics.cell / 2, y: rect.minY - 12,
                           width: metrics.cell, height: metrics.tileHeight + 18).contains(point)
         }) else { clearFolderHover(); pendingTarget = nil; return }
-        let residents = preview.filter { displayPage($0) == page }
+        let residents = preview.filter { !store.dockIDs.contains($0.id) && displayPage($0) == page }
         if local >= residents.count {
             clearFolderHover()
             pendingTarget = nil
@@ -695,12 +766,20 @@ struct HomeView: View {
         pendingTarget = target.id
         let rect = metrics.iconRect(local)
         let center = CGPoint(x: rect.midX, y: rect.midY)
-        let radius = metrics.icon * 0.34
+        let radius = metrics.icon * (target.isFolder ? 0.7 : 0.48)
         if hypot(point.x - center.x, point.y - center.y) < radius {
             if hoveredID != target.id {
                 hoveredID = target.id
                 hoverStart = Date()
                 hoverAnchor = center
+                let token = UUID(); hoverToken = token
+                if target.isFolder {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
+                        guard hoverToken == token, hoveredID == target.id, draggedItem != nil else { return }
+                        expandedHover = target.id
+                        openItem(target, source: rect)
+                    }
+                }
             }
             hoverCell = local
             return
@@ -713,24 +792,54 @@ struct HomeView: View {
     }
     private func finishMove(_ item: HomeItem) {
         let point = CGPoint(x: dragOrigin.midX + dragTranslation.width, y: dragOrigin.midY + dragTranslation.height)
-        let radius = screenSize.width * 156 / 947 * 0.34
+        let metrics = HomeMetrics(size: screenSize, homeOffset: (safeTop - safeBottom) / 2)
+        var landing = CGRect.zero
+        let radius = metrics.icon * 0.83
         let destination = dragTargetPage ?? store.pageNumber(item.id)
-        if let target = hoveredID, Date().timeIntervalSince(hoverStart) > 0.65,
-           hypot(point.x - hoverAnchor.x, point.y - hoverAnchor.y) < radius,
+        if let dockDrop {
+            store.setDock(item.id, index: dockDrop)
+            if let index = store.dockIDs.firstIndex(of: item.id) { landing = dockRect(index, metrics: metrics) }
+        } else if let target = hoveredID, Date().timeIntervalSince(hoverStart) > 0.65,
+           (expandedHover == target || hypot(point.x - hoverAnchor.x, point.y - hoverAnchor.y) < radius),
            store.items.contains(where: { $0.id == target && store.pageNumber($0.id) == page }) {
+            if let folder = store.items.first(where: { $0.id == target }) {
+                landing = expandedHover == target ? metrics.folderIconRect(folder.slots.count % 9) : metrics.previewRect(folder.slots.count % 9, source: itemRect(folder, metrics: metrics))
+            }
             withAnimation(reorderMotion) { store.merge(source: item.id, target: target) }
         } else if var preview = dragPreview {
-            if let target = pendingTarget, let from = preview.firstIndex(where: { $0.id == item.id }),
+            if hoveredID == nil, let target = pendingTarget, let from = preview.firstIndex(where: { $0.id == item.id }),
                let to = preview.firstIndex(where: { $0.id == target }) {
                 let moving = preview.remove(at: from)
                 preview.insert(moving, at: min(to, preview.count))
             }
+            store.setDock(item.id, index: nil)
             store.place(item.id, on: destination, order: preview)
+            landing = metrics.iconRect(store.items.filter { !store.dockIDs.contains($0.id) && store.pageNumber($0.id) == destination }.firstIndex(where: { $0.id == item.id }) ?? 0)
         }
+        animateLanding(item, to: landing)
+        expandedHover = nil
         cancelLift()
         suppressTapUntil = Date().addingTimeInterval(0.25)
     }
+    private func animateLanding(_ item: HomeItem, to target: CGRect) {
+        guard target.width > 0 else { return }
+        let token = UUID(); landingToken = token
+        landingItem = item
+        landingRect = CGRect(x: dragOrigin.midX + dragTranslation.width - dragOrigin.width / 2,
+                             y: dragOrigin.midY + dragTranslation.height - dragOrigin.height / 2,
+                             width: dragOrigin.width, height: dragOrigin.height)
+        DispatchQueue.main.async {
+            withAnimation(reduceMotion ? .linear(duration: 0.01) : .spring(response: 0.30, dampingFraction: 0.83)) { landingRect = target }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) {
+            if landingToken == token { landingItem = nil }
+        }
+    }
     private func cancelLift() {
+        if expandedHover != nil { closeFolder() }
+        expandedHover = nil
+        dockDrop = nil
+        hoverToken = UUID(); edgeToken = UUID()
         draggedItem = nil
         liftKey = nil
         folderDraggedSlot = nil
@@ -750,18 +859,24 @@ struct HomeView: View {
         guard direction != edgeDirection else { return }
         edgeDirection = direction
         guard direction != 0 else { return }
-        let originalPage = page
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
-            guard edgeDirection == direction && draggedItem != nil && page == originalPage else { return }
+        let token = UUID(); edgeToken = token
+        advanceEdge(direction, token: token)
+    }
+    private func advanceEdge(_ direction: Int, token: UUID) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            guard edgeToken == token, edgeDirection == direction, draggedItem != nil else { return }
             let destination = max(0, page + direction)
-            if destination >= store.pageCount { _ = store.addPage() }
-            clearFolderHover()
-            pendingTarget = nil
+            guard destination != page else { return }
+            let created = destination >= store.pageCount
+            if created { _ = store.addPage() }
+            clearFolderHover(); pendingTarget = nil
             dragTargetPage = destination
             withAnimation(reorderMotion) { page = destination }
+            if !created { advanceEdge(direction, token: token) }
         }
     }
     private func clearFolderHover() {
+        hoverToken = UUID()
         hoveredID = nil
         hoverCell = nil
         hoverStart = .distantPast
@@ -851,9 +966,9 @@ struct HomeView: View {
             return CGRect(x: screenSize.width / 2 - 30, y: screenSize.height / 2 - 30, width: 60, height: 60)
         }
         let item = store.items[index]
-        let residents = store.items.filter { store.pageNumber($0.id) == store.pageNumber(item.id) }
+        let residents = store.items.filter { !store.dockIDs.contains($0.id) && store.pageNumber($0.id) == store.pageNumber(item.id) }
         let local = residents.firstIndex(where: { $0.id == item.id }) ?? 0
-        let rect = metrics.iconRect(local)
+        let rect = store.dockIDs.firstIndex(of: item.id).map { dockRect($0, metrics: metrics) } ?? metrics.iconRect(local)
         if item.isFolder, let position = item.slots.firstIndex(of: slot) {
             return metrics.previewRect(position % 9, source: rect)
         }

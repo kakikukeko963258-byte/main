@@ -22,15 +22,26 @@ struct EditingWiggle: ViewModifier {
 private struct ActiveIconRock: ViewModifier {
     let seed: Int
     let anchor: UnitPoint
-    @State private var rocking = false
+    @EnvironmentObject private var clock: EditingClock
     private var angle: Double { seed.isMultiple(of: 2) ? 1.6 : -1.6 }
     func body(content: Content) -> some View {
-        content
-            .rotationEffect(.degrees(rocking ? angle : -angle), anchor: anchor)
-            .onAppear {
-                // Keep folders and standalone icons on the same gentle rhythm.
-                withAnimation(.easeInOut(duration: 0.15)
-                    .repeatForever(autoreverses: true)) { rocking = true }
-            }
+        content.rotationEffect(.degrees(clock.rocking ? angle : -angle), anchor: anchor)
     }
+}
+
+// One low-frequency clock keeps folders and icons on the same phase and curve.
+final class EditingClock: ObservableObject {
+    @Published var rocking = false
+    private var timer: Timer?
+    func setActive(_ active: Bool) {
+        timer?.invalidate(); timer = nil
+        guard active else { rocking = false; return }
+        let timer = Timer(timeInterval: 0.15, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            withAnimation(.easeInOut(duration: 0.15)) { self.rocking.toggle() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+    deinit { timer?.invalidate() }
 }

@@ -92,11 +92,15 @@ struct AppSwitcher: View {
                 } else {
                     ScrollViewReader { proxy in
                         ScrollView(.horizontal, showsIndicators: false) {
-                            LazyHStack(spacing: 20) {
+                            HStack(spacing: -card.width * 0.28) {
                                 ForEach(recent.slots, id: \.self) { slot in
-                                    SwitcherCard(slot: slot, preview: recent.previews[slot], wallpaper: wallpaper,
+                                    GeometryReader { cardGeometry in
+                                        let distance = abs(cardGeometry.frame(in: .named("switcherScroll")).midX - size.width / 2)
+                                        SwitcherCard(slot: slot, preview: recent.previews[slot], wallpaper: wallpaper,
                                                  size: card, resume: { resume(slot, $0) },
                                                  terminate: { terminate(slot) })
+                                            .scaleEffect(max(0.94, 1 - distance / size.width * 0.045))
+                                    }.frame(width: card.width, height: card.height + 38)
                                         .id(slot)
                                         .onAppear { recent.loadPreview(slot) }
                                 }
@@ -105,7 +109,8 @@ struct AppSwitcher: View {
                             .padding(.horizontal, (size.width - card.width) / 2)
                             .padding(.top, 18).padding(.bottom, 26)
                         }
-                        .switcherPaging()
+                        .switcherPaging(stride: card.width * 0.72)
+                        .coordinateSpace(name: "switcherScroll")
                         .frame(height: card.height + 86)
                         .onAppear {
                             if let slot = active ?? recent.slots.first {
@@ -119,7 +124,7 @@ struct AppSwitcher: View {
                     Spacer()
                     Button(action: home) {
                         Image(systemName: "house.fill").font(.system(size: 18, weight: .medium))
-                            .frame(width: 56, height: 40).homeGlass(22)
+                            .frame(width: 56, height: 44).contentShape(Rectangle()).homeGlass(22)
                     }.buttonStyle(.plain).accessibilityLabel("ホームへ戻る")
                     Text("左右に切替 · 上にスワイプして終了")
                         .font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
@@ -193,12 +198,25 @@ private struct SwitcherCard: View {
 }
 
 private extension View {
-    @ViewBuilder func switcherPaging() -> some View {
-        if #available(iOS 17.0, *) { self.scrollTargetBehavior(.viewAligned) }
+    @ViewBuilder func switcherPaging(stride: CGFloat) -> some View {
+        if #available(iOS 17.0, *) { self.scrollTargetBehavior(GentleCardSnap(stride: stride)) }
         else { self }
     }
     @ViewBuilder func switcherTargets() -> some View {
         if #available(iOS 17.0, *) { self.scrollTargetLayout() }
         else { self }
+    }
+}
+
+@available(iOS 17.0, *)
+private struct GentleCardSnap: ScrollTargetBehavior {
+    let stride: CGFloat
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        guard stride > 0 else { return }
+        let projected = target.rect.minX
+        let nearest = (projected / stride).rounded() * stride
+        // Preserve the system's inertial projection, with only a gentle card bias.
+        let strength: CGFloat = abs(context.velocity.dx) < 120 ? 0.4 : 0.12
+        target.rect.origin.x = projected + (nearest - projected) * strength
     }
 }
