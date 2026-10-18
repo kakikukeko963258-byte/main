@@ -311,8 +311,13 @@ final class AppWindowView: UIView {
         if animated {
             animationFrom = currentProgress
             animationStarted = CACurrentMediaTime()
-            let duration = t > currentProgress ? LaunchMorph.openingDuration : LaunchMorph.closingDuration
-            animationDuration = duration * max(0.25, Double(abs(t - currentProgress)))
+            if t < currentProgress {
+                // Swiping has already reduced the window. Do not shorten the
+                // close by its remaining sampled phase: use the button timing.
+                animationDuration = LaunchMorph.closingDuration
+            } else {
+                animationDuration = LaunchMorph.openingDuration * max(0.25, Double(abs(t - currentProgress)))
+            }
             let clock = WindowAnimationClock(owner: self)
             let link = CADisplayLink(target: clock, selector: #selector(WindowAnimationClock.tick(_:)))
             link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
@@ -335,7 +340,9 @@ final class AppWindowView: UIView {
         let toExpansion = LaunchMorph.expansion(at: targetProgress)
         let rawExpansion = fromExpansion + (toExpansion - fromExpansion) * eased
         currentProgress = LaunchMorph.progress(forExpansion: rawExpansion)
-        let overshoot = opening ? 0 : max(0, -rawExpansion)
+        // The terminal recoil also matches the button, regardless of how much
+        // of the expansion was consumed while the finger was on screen.
+        let overshoot = opening ? 0 : max(0, eased - 1)
         // Squash vertically and spread horizontally at impact instead of only
         // shrinking uniformly. Keep a small contraction underneath the strain.
         let recoil = -overshoot * 0.9
