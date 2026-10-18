@@ -78,7 +78,7 @@ struct AppSwitcher: View {
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
-            let card = CGSize(width: size.width * 0.72, height: size.height * 0.72)
+            let card = CGSize(width: size.width * 0.70, height: size.height * 0.68)
             ZStack {
                 Color.black.opacity(0.2).ignoresSafeArea()
                     .contentShape(Rectangle()).onTapGesture(perform: home)
@@ -92,14 +92,14 @@ struct AppSwitcher: View {
                 } else {
                     ScrollViewReader { proxy in
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: -card.width * 0.28) {
-                                ForEach(recent.slots, id: \.self) { slot in
+                            HStack(spacing: -card.width * 0.50) {
+                                ForEach(Array(recent.slots.reversed()), id: \.self) { slot in
                                     GeometryReader { cardGeometry in
                                         let distance = abs(cardGeometry.frame(in: .named("switcherScroll")).midX - size.width / 2)
                                         SwitcherCard(slot: slot, preview: recent.previews[slot], wallpaper: wallpaper,
                                                  size: card, resume: { resume(slot, $0) },
                                                  terminate: { terminate(slot) })
-                                            .scaleEffect(max(0.94, 1 - distance / size.width * 0.045))
+                                            .scaleEffect(max(0.92, 1 - distance / size.width * 0.07))
                                     }.frame(width: card.width, height: card.height + 38)
                                         .id(slot)
                                         .onAppear { recent.loadPreview(slot) }
@@ -109,7 +109,7 @@ struct AppSwitcher: View {
                             .padding(.horizontal, (size.width - card.width) / 2)
                             .padding(.top, 18).padding(.bottom, 26)
                         }
-                        .switcherPaging(stride: card.width * 0.72)
+                        .switcherPaging(stride: card.width * 0.50)
                         .coordinateSpace(name: "switcherScroll")
                         .frame(height: card.height + 86)
                         .onAppear {
@@ -118,7 +118,7 @@ struct AppSwitcher: View {
                             }
                         }
                     }
-                    .offset(y: -size.height * 0.025)
+                    .offset(y: -size.height * 0.035)
                 }
                 VStack {
                     Spacer()
@@ -168,10 +168,10 @@ private struct SwitcherCard: View {
                 }
                 .frame(width: size.width, height: size.height)
                 .clipped()
-                .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(.white.opacity(0.16), lineWidth: 0.7))
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(.white.opacity(0.16), lineWidth: 0.7))
                 .shadow(color: .black.opacity(0.25), radius: 14, y: 8)
-                .contentShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                 .onTapGesture { resume(geometry.frame(in: .global)) }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(slot == 1 ? "最近のアプリ、PC File Bridge" : "最近のアプリ \(slot)")
@@ -216,7 +216,7 @@ private struct GentleCardSnap: ScrollTargetBehavior {
         let projected = target.rect.minX
         let nearest = (projected / stride).rounded() * stride
         // Preserve the system's inertial projection, with only a gentle card bias.
-        let strength: CGFloat = abs(context.velocity.dx) < 120 ? 0.4 : 0.12
+        let strength: CGFloat = abs(context.velocity.dx) < 120 ? 0.65 : 0.16
         target.rect.origin.x = projected + (nearest - projected) * strength
     }
 }

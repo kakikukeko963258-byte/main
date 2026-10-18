@@ -559,8 +559,8 @@ struct HomeView: View {
         displayedItems.filter { !store.dockIDs.contains($0.id) && displayPage($0) == displayPage(item) }.firstIndex(where: { $0.id == item.id }) ?? 0
     }
     private func dockRect(_ index: Int, metrics: HomeMetrics) -> CGRect {
-        CGRect(x: metrics.size.width * (0.075 + CGFloat(index) * 0.231),
-               y: metrics.size.height - safeBottom - metrics.icon - 12,
+        CGRect(x: metrics.iconRect(index).minX,
+               y: metrics.size.height - safeBottom - metrics.icon + 6,
                width: metrics.icon, height: metrics.icon)
     }
     private func itemRect(_ item: HomeItem, metrics: HomeMetrics) -> CGRect {
@@ -570,9 +570,9 @@ struct HomeView: View {
     private func homePages(_ metrics: HomeMetrics) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 34, style: .continuous)
-                .fill(.clear).frame(width: metrics.size.width * 0.94, height: metrics.icon + 24)
+                .fill(.clear).frame(width: metrics.size.width * 0.94, height: metrics.icon + 32)
                 .homeGlass(34)
-                .position(x: metrics.size.width / 2, y: metrics.size.height - safeBottom - metrics.icon / 2)
+                .position(x: metrics.size.width / 2, y: metrics.size.height - safeBottom - metrics.icon / 2 + 6)
             // One stable ForEach keeps the touched view alive while its slot changes,
             // including a move across a page boundary. Only positions animate.
             ZStack(alignment: .topLeading) {
@@ -581,11 +581,11 @@ struct HomeView: View {
                            height: metrics.size.height)
                     .contentShape(Rectangle()).onTapGesture(perform: finishEditing)
                     .onLongPressGesture(minimumDuration: 0.35) { liftFeedback.fire(); editing = true }
-                ForEach(displayedItems) { item in
+                ForEach(displayedItems.filter { !store.dockIDs.contains($0.id) }) { item in
                     let rect = itemRect(item, metrics: metrics)
                     homeTile(item, metrics: metrics, rect: rect)
                         .frame(width: metrics.cell, height: metrics.tileHeight)
-                        .position(x: rect.midX + CGFloat(store.dockIDs.contains(item.id) ? page : displayPage(item)) * metrics.size.width,
+                        .position(x: rect.midX + CGFloat(displayPage(item)) * metrics.size.width,
                                   y: rect.minY + metrics.tileHeight / 2)
                         .opacity(folderID == item.id || (selectedSlot.map { item.slots == [$0] } ?? false) ? 0 : 1)
                 }
@@ -606,6 +606,14 @@ struct HomeView: View {
                     pagePan = 0
                 }
             })
+            // Dock is a separate, fixed surface: page pan and page springs never reach it.
+            ForEach(store.dockIDs.compactMap { id in displayedItems.first { $0.id == id } }) { item in
+                let rect = itemRect(item, metrics: metrics)
+                homeTile(item, metrics: metrics, rect: rect)
+                    .frame(width: metrics.cell, height: metrics.tileHeight)
+                    .position(x: rect.midX, y: rect.minY + metrics.tileHeight / 2)
+                    .opacity(folderID == item.id || (selectedSlot.map { item.slots == [$0] } ?? false) ? 0 : 1)
+            }
             if store.pageCount > 1 {
                 HStack(spacing: 0) {
                     if store.pageCount <= 9 {
