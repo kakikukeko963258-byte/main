@@ -12,17 +12,22 @@ enum HapticMediaBuilder {
             let streams = try await YouTube(videoID: id, methods: [.local]).streams
             try Task.checkCancellation()
             let playable = streams.filter { $0.isNativelyPlayable && $0.fileExtension == .mp4 }
-            let combined = playable.filterVideoAndAudio().filter(byResolution: { ($0 ?? Int.max) <= 720 }).highestResolutionStream()
-                ?? playable.filterVideoAndAudio().lowestResolutionStream()
+            let combinedStreams = playable.filterVideoAndAudio()
+            // The user values a short wait over a large picture. Start with the
+            // smallest phone-friendly progressive stream and fall back to the
+            // smallest available resolution when 240p is not offered.
+            let combined = combinedStreams.filter(byResolution: { ($0 ?? Int.max) <= 240 }).lowestResolutionStream()
+                ?? combinedStreams.lowestResolutionStream()
             let asset: AVAsset
             if let stream = combined {
                 progress("動画と音声を取得中…")
                 let url = try await download(stream.url, to: directory.appendingPathComponent("video.mp4"))
                 asset = AVURLAsset(url: url)
             } else {
-                guard let video = playable.filterVideoOnly().filter(byResolution: { ($0 ?? Int.max) <= 720 }).highestResolutionStream()
-                        ?? playable.filterVideoOnly().lowestResolutionStream(),
-                      let audio = streams.filterAudioOnly().filter({ $0.fileExtension == .m4a }).highestAudioBitrateStream() else {
+                let videoStreams = playable.filterVideoOnly()
+                guard let video = videoStreams.filter(byResolution: { ($0 ?? Int.max) <= 240 }).lowestResolutionStream()
+                        ?? videoStreams.lowestResolutionStream(),
+                      let audio = streams.filterAudioOnly().filter({ $0.fileExtension == .m4a }).lowestAudioBitrateStream() else {
                     throw HapticMediaError.message("この動画の再生可能な映像・音声を取得できません。公開動画のリンクで再試行してください。ライブ配信・非公開・年齢制限などには対応していません。")
                 }
                 progress("映像を取得中…")
