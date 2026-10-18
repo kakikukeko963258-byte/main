@@ -4,12 +4,7 @@ import PhotosUI
 @main
 struct MainApp: App {
     var body: some Scene {
-        WindowGroup {
-            HomeView().preferredColorScheme(.dark)
-                .transformEnvironment(\.accessibilityReduceMotion) { reduced in
-                    if ProcessInfo.processInfo.arguments.contains("-listening-ui-reduced-motion") { reduced = true }
-                }
-        }
+        WindowGroup { HomeView().preferredColorScheme(.dark) }
     }
 }
 
@@ -252,7 +247,10 @@ struct HomeView: View {
     @State private var appTransitionToken = UUID()
     @State private var folderTransitionToken = UUID()
     @State private var gestureExpansion: CGFloat?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    private var reduceMotion: Bool {
+        systemReduceMotion || ProcessInfo.processInfo.arguments.contains("-listening-ui-reduced-motion")
+    }
     @Environment(\.scenePhase) private var scenePhase
     @State private var folderID: String?
     @State private var folderProgress: CGFloat = 0
