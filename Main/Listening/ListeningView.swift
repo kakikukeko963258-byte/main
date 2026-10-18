@@ -171,13 +171,15 @@ final class ListeningAudioModel: NSObject, ObservableObject, AVAudioPlayerDelega
     }
     private func update() {
         if let deadline = deadline {
-            remaining = max(0, Int(ceil(deadline.timeIntervalSinceNow)))
+            let nextRemaining = max(0, Int(ceil(deadline.timeIntervalSinceNow)))
+            if remaining != nextRemaining { remaining = nextRemaining }
             if deadline <= Date() {
                 if generating { generationTimedOut = true }
                 pause(); self.deadline = nil; message = "スリープタイマーで停止しました"
             }
         }
-        position = player?.currentTime ?? 0
+        let nextPosition = player?.currentTime ?? 0
+        if position != nextPosition { position = nextPosition }
         updateWord()
     }
     private func updateWord() {
