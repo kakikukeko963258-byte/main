@@ -125,7 +125,37 @@ final class HomeUITests: XCTestCase {
         app.buttons["ホームへ戻る"].tap()
         XCTAssertTrue(app.buttons["アプリ 2"].waitForExistence(timeout: 5))
         app.buttons["アプリ 2"].tap()
-        XCTAssertTrue(app.staticTexts["ページ 2"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["写真リスニング"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testListeningChapterPlaybackAndHighlight() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-reset-home"]
+        app.launch()
+        let second = app.buttons["アプリ 2"]
+        XCTAssertTrue(second.waitForExistence(timeout: 10))
+        second.tap()
+        XCTAssertTrue(app.navigationBars["写真リスニング"].waitForExistence(timeout: 10))
+        app.buttons["listening-chapter-picker"].tap()
+        app.buttons["第2章"].tap()
+        let play = app.buttons["再生"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5))
+        play.tap()
+        XCTAssertTrue(app.buttons["一時停止"].waitForExistence(timeout: 5))
+        let reading = app.textViews["listening-reading-text"]
+        let highlighted = NSPredicate { _, _ in
+            guard let value = reading.value as? String else { return false }
+            return !value.isEmpty && value.count < 40
+        }
+        expectation(for: highlighted, evaluatedWith: reading)
+        waitForExpectations(timeout: 10)
+        app.swipeUp()
+        capture("11-listening-highlight")
+        app.swipeDown()
+        app.buttons["一時停止"].tap()
+        app.buttons["ホームへ戻る"].tap()
+        XCTAssertTrue(app.buttons["アプリ 1"].waitForExistence(timeout: 5))
     }
 
     @MainActor

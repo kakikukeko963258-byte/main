@@ -1060,7 +1060,12 @@ struct SlotPage: View {
     let dragChanged: (CGFloat) -> Void
     let dragEnded: (Bool) -> Void
     var body: some View {
-        if slot == 1 {
+        if slot == 2 {
+            ListeningView(onHome: close)
+                .padding(.top, safeTop)
+                .padding(.bottom, 16)
+                .background(Color(uiColor: .systemGroupedBackground))
+        } else if slot == 1 {
             PCFileBridgeView(onHome: close)
                 .padding(.top, safeTop)
                 .padding(.bottom, 16)
