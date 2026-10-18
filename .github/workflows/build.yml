@@ -39,6 +39,10 @@ jobs:
         run: |
           swiftc -parse-as-library Main/YouTubeHaptics/YouTubeLink.swift Main/YouTubeHaptics/Vendor/AHAPpyConverter.swift Main/YouTubeHaptics/HapticAnalysis.swift scripts/HapticChecks.swift -o /tmp/haptic-checks
           /tmp/haptic-checks
+      - name: Probe public YouTube extraction (runner network)
+        continue-on-error: true
+        timeout-minutes: 4
+        run: swift run --package-path scripts/YouTubeProbe
       - name: Build iPhone app
         run: |
           set -euo pipefail

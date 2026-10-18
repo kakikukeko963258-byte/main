@@ -11,3 +11,4 @@ wda-source/
 wda-products/
 reference-miniwatts/
 vendor-inspect/
+.build/
