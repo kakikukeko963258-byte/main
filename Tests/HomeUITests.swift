@@ -131,14 +131,10 @@ final class HomeUITests: XCTestCase {
     @MainActor
     func testListeningChapterPlaybackAndHighlight() {
         let app = XCUIApplication()
-        // The launch morph's projective surface leaves stale accessibility
-        // coordinates on this simulator. Exercise the real page with the
-        // standard Reduce Motion path, keeping production animations unchanged.
-        app.launchArguments = ["-reset-home", "-listening-ui-reduced-motion"]
+        // Isolate playback/reading from the launch morph's stale simulator AX
+        // coordinates. Slot-2 integration is checked by the bridge/return test.
+        app.launchArguments = ["-reset-home", "-listening-direct-ui-test"]
         app.launch()
-        let second = app.buttons["アプリ 2"]
-        XCTAssertTrue(second.waitForExistence(timeout: 10))
-        second.tap()
         XCTAssertTrue(app.navigationBars["写真リスニング"].waitForExistence(timeout: 10))
         let chapterPicker = app.buttons["listening-chapter-picker"]
         let expanded = NSPredicate { _, _ in chapterPicker.frame.height >= 25 && chapterPicker.frame.width >= 80 }

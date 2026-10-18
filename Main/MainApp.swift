@@ -3,8 +3,14 @@ import PhotosUI
 
 @main
 struct MainApp: App {
+    @State private var directListening = ProcessInfo.processInfo.arguments.contains("-listening-direct-ui-test")
     var body: some Scene {
-        WindowGroup { HomeView().preferredColorScheme(.dark) }
+        WindowGroup {
+            Group {
+                if directListening { ListeningView(onHome: { directListening = false }) }
+                else { HomeView() }
+            }.preferredColorScheme(.dark)
+        }
     }
 }
 
@@ -247,10 +253,7 @@ struct HomeView: View {
     @State private var appTransitionToken = UUID()
     @State private var folderTransitionToken = UUID()
     @State private var gestureExpansion: CGFloat?
-    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
-    private var reduceMotion: Bool {
-        systemReduceMotion || ProcessInfo.processInfo.arguments.contains("-listening-ui-reduced-motion")
-    }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var folderID: String?
     @State private var folderProgress: CGFloat = 0
