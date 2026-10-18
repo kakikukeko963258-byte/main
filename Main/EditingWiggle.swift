@@ -26,6 +26,7 @@ private struct ActiveIconRock: ViewModifier {
     private var angle: Double { seed.isMultiple(of: 2) ? 1.6 : -1.6 }
     func body(content: Content) -> some View {
         content.rotationEffect(.degrees(clock.rocking ? angle : -angle), anchor: anchor)
+            .animation(.easeInOut(duration: 0.15), value: clock.rocking)
     }
 }
 
@@ -38,7 +39,7 @@ final class EditingClock: ObservableObject {
         guard active else { rocking = false; return }
         let timer = Timer(timeInterval: 0.15, repeats: true) { [weak self] _ in
             guard let self else { return }
-            withAnimation(.easeInOut(duration: 0.15)) { self.rocking.toggle() }
+            self.rocking.toggle()
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer

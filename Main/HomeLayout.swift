@@ -310,6 +310,13 @@ final class AppWindowView: UIView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     deinit { displayLink?.invalidate() }
 
+    var interactiveExpansion: CGFloat { LaunchMorph.expansion(at: currentProgress) }
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        // Forward touches to the real page even while its snapshot is morphing.
+        let local = host.view.convert(point, from: self)
+        guard surface.bounds.contains(local), host.view.alpha > 0.01 else { return nil }
+        return host.view.hitTest(local, with: event)
+    }
     func configureSource(_ source: CGRect, isCard: Bool) {
         self.source = source
         sourceIsCard = isCard
@@ -345,7 +352,9 @@ final class AppWindowView: UIView {
                 snapshot.alpha = blend * blend * (3 - 2 * blend)
                 surface.insertSubview(snapshot, belowSubview: icon)
                 capture = snapshot
-                host.view.isHidden = true
+                snapshot.isUserInteractionEnabled = false
+                host.view.isHidden = false
+                host.view.alpha = 0.011
             }
         }
         if animated {
@@ -409,6 +418,7 @@ final class AppWindowView: UIView {
         surface.transform = .identity
         surface.layer.transform = CATransform3DIdentity
         host.view.isHidden = false
+        host.view.alpha = 1
         capture?.removeFromSuperview()
         capture = nil
         host.view.setNeedsLayout()

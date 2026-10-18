@@ -209,16 +209,12 @@ struct SlotIcon: View {
 struct FolderIcon: View {
     let item: HomeItem
     var body: some View {
-        GeometryReader { geo in
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: geo.size.width * 0.045), count: 3), spacing: geo.size.width * 0.045) {
-                ForEach(Array(item.slots.prefix(9)), id: \.self) { slot in
-                    SlotIcon(slot: slot)
-                }
-            }.padding(geo.size.width * 0.14)
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                .modifier(IconGlass())
-        }.aspectRatio(1, contentMode: .fit)
+        Image(uiImage: FolderPreviewArtwork.image(item.slots))
+            .resizable().aspectRatio(1, contentMode: .fit)
+            .modifier(IconGlass())
+            .transaction { $0.animation = nil }
     }
+
 }
 
 struct IconPressStyle: ButtonStyle {
@@ -237,6 +233,9 @@ struct HomeView: View {
     @State private var switcherVisible = false
     @State private var appPreviewRequest = 0
     @State private var appFromSwitcher = false
+    @State private var appTransitionToken = UUID()
+    @State private var folderTransitionToken = UUID()
+    @State private var gestureExpansion: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var folderID: String?
@@ -295,15 +294,17 @@ struct HomeView: View {
                     .blur(radius: reduceMotion ? 0 : (switcherVisible ? 12 : 6 * folderProgress))
                 homePages(metrics)
                     .compositingGroup()
-                    .scaleEffect(reduceMotion ? 1 : 1 + 0.07 * folderProgress)
+                    .scaleEffect(reduceMotion ? 1 : (switcherVisible ? 0.94 : (editing ? 0.985 : 1)) + 0.07 * folderProgress)
+                    .animation(reduceMotion ? nil : .spring(response: 0.30, dampingFraction: 0.86), value: editing)
+                    .animation(reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.88), value: switcherVisible)
                     .blur(radius: switcherVisible ? 14 : 10 * folderProgress)
                     .opacity(1 - 0.12 * folderProgress)
-                    .allowsHitTesting(folderID == nil && selectedSlot == nil && !switcherVisible)
+                    .allowsHitTesting((folderID == nil || folderProgress == 0) && (selectedSlot == nil || appProgress == 0) && !switcherVisible)
                     .accessibilityHidden(folderID != nil || selectedSlot != nil || switcherVisible)
                 if let id = folderID, let item = store.items.first(where: { $0.id == id }) {
                     folderOverlay(item, id: id, metrics: metrics)
                     .opacity(reduceMotion ? folderProgress : 1)
-                    .allowsHitTesting(selectedSlot == nil)
+                    .allowsHitTesting(folderProgress > 0 && (selectedSlot == nil || appProgress == 0))
                     .accessibilityHidden(selectedSlot != nil)
                     .zIndex(2)
                 }
@@ -319,11 +320,14 @@ struct HomeView: View {
                                                appSource = homeSource(for: slot)
                                                appFromSwitcher = false
                                            }
+                                           if gestureExpansion == nil { gestureExpansion = recentApps.activeWindow?.interactiveExpansion ?? 1 }
+                                           appTransitionToken = UUID()
                                            appInteracting = true
-                                           appProgress = 1 - min(0.55, max(0, amount / geometry.size.height))
+                                           appProgress = max(0, (gestureExpansion ?? 1) - min(0.55, max(0, amount / geometry.size.height)))
                                        },
                                        dragEnded: { dismiss in
                         appInteracting = false
+                        gestureExpansion = nil
                         if dismiss { closeApp() } else { appProgress = 1 }
                     })
                     .id(slot)
@@ -380,7 +384,8 @@ struct HomeView: View {
                         Button(action: finishEditing) { Text("完了")
                             .padding(.horizontal, 16).frame(height: 44).contentShape(Rectangle()).homeGlass(24) }
                     }.buttonStyle(.plain).font(.system(size: 15, weight: .semibold))
-                        .position(x: geometry.size.width / 2, y: geometry.size.height * 1706.5 / 2048).zIndex(25)
+                        .position(x: geometry.size.width / 2, y: geometry.size.height * 1706.5 / 2048)
+                        .transition(.opacity.combined(with: .scale(scale: 0.86))).zIndex(25)
                 }
                 if selectedSlot == nil && folderID == nil && !editing && !switcherVisible {
                     Button(action: presentSwitcher) {
@@ -428,6 +433,7 @@ struct HomeView: View {
             }
         }
         .environmentObject(editingClock)
+        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.88), value: editing)
         .onChange(of: editing) { editingClock.setActive($0) }
         .sheet(isPresented: $showSearch) { searchSheet }
         .task {
@@ -695,6 +701,7 @@ struct HomeView: View {
     }
     private func openItem(_ item: HomeItem, source: CGRect) {
         if item.isFolder {
+            folderTransitionToken = UUID()
             folderName = item.name
             folderSource = source
             folderProgress = 0
@@ -893,6 +900,8 @@ struct HomeView: View {
         guard !editing && Date() > suppressTapUntil else { return }
         iconMenu = nil
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        appTransitionToken = UUID()
+        gestureExpansion = nil
         appSource = source
         appFromSwitcher = false
         recentApps.opened(slot)
@@ -905,6 +914,8 @@ struct HomeView: View {
         }
     }
     private func closeApp() {
+        let token = UUID(); appTransitionToken = token
+        gestureExpansion = nil
         if appFromSwitcher, let slot = selectedSlot {
             appSource = homeSource(for: slot)
             appFromSwitcher = false
@@ -913,7 +924,7 @@ struct HomeView: View {
         if reduceMotion { withAnimation(appMotion) { appProgress = 0 } }
         else { appProgress = 0 }
         DispatchQueue.main.asyncAfter(deadline: .now() + LaunchMorph.closingDuration + 0.05) {
-            if appProgress == 0 {
+            if appTransitionToken == token && appProgress == 0 {
                 selectedSlot = nil
                 DispatchQueue.main.async { UIAccessibility.post(notification: .screenChanged, argument: nil) }
             }
@@ -936,6 +947,7 @@ struct HomeView: View {
         }
     }
     private func resumeFromSwitcher(_ slot: Int, source: CGRect) {
+        appTransitionToken = UUID(); gestureExpansion = nil
         recentApps.opened(slot)
         if let item = store.items.first(where: { $0.slots.contains(slot) }) { page = store.pageNumber(item.id) }
         appSource = source
@@ -983,12 +995,13 @@ struct HomeView: View {
         return rect
     }
     private func closeFolder() {
+        let token = UUID(); folderTransitionToken = token
         iconMenu = nil
         if let id = folderID { store.rename(id, to: folderName) }
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         withAnimation(folderMotion) { folderProgress = 0 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.48) {
-            if folderProgress == 0 {
+            if folderTransitionToken == token && folderProgress == 0 {
                 folderID = nil
                 DispatchQueue.main.async { UIAccessibility.post(notification: .layoutChanged, argument: nil) }
             }

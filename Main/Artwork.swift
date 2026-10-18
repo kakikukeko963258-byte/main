@@ -92,3 +92,23 @@ enum WallpaperArtwork {
         return result
     }
 }
+
+// Miniatures are one immutable image: only the enclosing folder rocks in edit mode.
+enum FolderPreviewArtwork {
+    private static let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>(); cache.countLimit = 48; return cache
+    }()
+    static func image(_ slots: [Int]) -> UIImage {
+        let key = slots.prefix(9).map(String.init).joined(separator: "-") as NSString
+        if let image = cache.object(forKey: key) { return image }
+        let side: CGFloat = 192
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
+            for (index, slot) in slots.prefix(9).enumerated() {
+                IconArtwork.image(slot).draw(in: CGRect(x: side * (0.14 + CGFloat(index % 3) * 0.245),
+                    y: side * (0.14 + CGFloat(index / 3) * 0.245), width: side * 0.20, height: side * 0.20))
+            }
+        }
+        cache.setObject(image, forKey: key); return image
+    }
+}
