@@ -8,6 +8,10 @@ on:
         description: Skip simulator checks when explicitly requested
         type: boolean
         default: false
+      only_listening:
+        description: Run the focused chapter playback and word highlighting UI test
+        type: boolean
+        default: false
 permissions:
   contents: write
 concurrency:
@@ -18,6 +22,7 @@ jobs:
     runs-on: macos-26
     env:
       RUN_UI_CHECKS: ${{ !contains(github.event.head_commit.message, '[skip ui]') && !inputs.skip_ui_checks }}
+      ONLY_LISTENING: ${{ inputs.only_listening || false }}
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
@@ -62,7 +67,11 @@ jobs:
           xcrun simctl io "$SIMULATOR_ID" recordVideo --codec=h264 motion.mov > /tmp/recording.log 2>&1 &
           RECORD_PID=$!
           trap 'kill -INT "$RECORD_PID" 2>/dev/null || true' EXIT
-          xcodebuild test -project main.xcodeproj -scheme main -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 -derivedDataPath simulator-build -resultBundlePath TestResults.xcresult CODE_SIGNING_ALLOWED=NO
+          TEST_FILTER=()
+          if [ "$ONLY_LISTENING" = "true" ]; then
+            TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testListeningChapterPlaybackAndHighlight)
+          fi
+          xcodebuild test -project main.xcodeproj -scheme main -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 -derivedDataPath simulator-build -resultBundlePath TestResults.xcresult "${TEST_FILTER[@]}" CODE_SIGNING_ALLOWED=NO
           kill -INT "$RECORD_PID" 2>/dev/null || true
           wait "$RECORD_PID" || true
           trap - EXIT

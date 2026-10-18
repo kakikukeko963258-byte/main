@@ -137,7 +137,11 @@ final class HomeUITests: XCTestCase {
         XCTAssertTrue(second.waitForExistence(timeout: 10))
         second.tap()
         XCTAssertTrue(app.navigationBars["写真リスニング"].waitForExistence(timeout: 10))
-        app.buttons["listening-chapter-picker"].tap()
+        let chapterPicker = app.buttons["listening-chapter-picker"]
+        let expanded = NSPredicate { _, _ in chapterPicker.frame.height >= 25 && chapterPicker.frame.width >= 80 }
+        expectation(for: expanded, evaluatedWith: chapterPicker)
+        waitForExpectations(timeout: 15)
+        chapterPicker.tap()
         app.buttons["第2章"].tap()
         let play = app.buttons["再生"]
         XCTAssertTrue(play.waitForExistence(timeout: 5))
