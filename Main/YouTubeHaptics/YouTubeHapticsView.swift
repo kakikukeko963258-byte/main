@@ -133,7 +133,7 @@ final class YouTubeHapticsModel: ObservableObject {
         player.replaceCurrentItem(with: nil)
         if let media { try? FileManager.default.removeItem(at: media.directory) }
         media = nil
-        try? engine?.stop()
+        engine?.stop()
         engine = nil
         ready = false
         busy = false

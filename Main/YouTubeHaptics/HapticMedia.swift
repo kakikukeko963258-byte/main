@@ -12,7 +12,7 @@ enum HapticMediaBuilder {
             let streams = try await YouTube(videoID: id, methods: [.local]).streams
             try Task.checkCancellation()
             let playable = streams.filter { $0.isNativelyPlayable && $0.fileExtension == .mp4 }
-            let combined = playable.filterVideoAndAudio().filter(byResolution: { $0 <= 720 }).highestResolutionStream()
+            let combined = playable.filterVideoAndAudio().filter(byResolution: { ($0 ?? Int.max) <= 720 }).highestResolutionStream()
                 ?? playable.filterVideoAndAudio().lowestResolutionStream()
             let asset: AVAsset
             if let stream = combined {
@@ -20,7 +20,7 @@ enum HapticMediaBuilder {
                 let url = try await download(stream.url, to: directory.appendingPathComponent("video.mp4"))
                 asset = AVURLAsset(url: url)
             } else {
-                guard let video = playable.filterVideoOnly().filter(byResolution: { $0 <= 720 }).highestResolutionStream()
+                guard let video = playable.filterVideoOnly().filter(byResolution: { ($0 ?? Int.max) <= 720 }).highestResolutionStream()
                         ?? playable.filterVideoOnly().lowestResolutionStream(),
                       let audio = streams.filterAudioOnly().filter({ $0.fileExtension == .m4a }).highestAudioBitrateStream() else {
                     throw HapticMediaError.message("この動画の再生可能な映像・音声を取得できません。公開動画のリンクで再試行してください。ライブ配信・非公開・年齢制限などには対応していません。")
@@ -30,13 +30,16 @@ enum HapticMediaBuilder {
                 progress("音声を取得中…")
                 let audioURL = try await download(audio.url, to: directory.appendingPathComponent("audio.m4a"))
                 let composition = AVMutableComposition()
-                for (url, type) in [(videoURL, AVMediaType.video), (audioURL, AVMediaType.audio)] {
+                let sources: [(URL, AVMediaType)] = [(videoURL, .video), (audioURL, .audio)]
+                for (url, type) in sources {
                     let source = AVURLAsset(url: url)
-                    guard let track = try await source.loadTracks(withMediaType: type).first,
+                    let tracks = try await source.loadTracks(withMediaType: type)
+                    guard let track = tracks.first,
                           let target = composition.addMutableTrack(withMediaType: type, preferredTrackID: kCMPersistentTrackID_Invalid) else {
                         throw HapticMediaError.message("動画のトラックを読み込めません。")
                     }
-                    try target.insertTimeRange(try await track.load(.timeRange), of: track, at: .zero)
+                    let range = try await track.load(.timeRange)
+                    try target.insertTimeRange(range, of: track, at: CMTime.zero)
                     if type == .video { target.preferredTransform = try await track.load(.preferredTransform) }
                 }
                 asset = composition
