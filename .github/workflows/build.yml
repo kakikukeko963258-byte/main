@@ -23,12 +23,17 @@ jobs:
     env:
       RUN_UI_CHECKS: ${{ !contains(github.event.head_commit.message, '[skip ui]') && !inputs.skip_ui_checks }}
       ONLY_LISTENING: ${{ inputs.only_listening || false }}
+      ONLY_CHARGING: ${{ contains(github.event.head_commit.message, '[charging]') }}
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
         run: xcodegen generate
+      - name: Verify charge prediction
+        run: |
+          swiftc Main/Charging/ChargeEstimator.swift scripts/ChargeEstimatorChecks.swift -o /tmp/charge-checks
+          /tmp/charge-checks
       - name: Build iPhone app
         run: |
           set -euo pipefail
@@ -68,6 +73,9 @@ jobs:
           RECORD_PID=$!
           trap 'kill -INT "$RECORD_PID" 2>/dev/null || true' EXIT
           TEST_FILTER=()
+          if [ "$ONLY_CHARGING" = "true" ]; then
+            TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testChargingMonitor -only-testing:mainUITests/HomeUITests/testListeningChapterPlaybackAndHighlight)
+          fi
           if [ "$ONLY_LISTENING" = "true" ]; then
             TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testListeningChapterPlaybackAndHighlight)
           fi

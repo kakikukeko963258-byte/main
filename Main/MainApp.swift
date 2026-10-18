@@ -3,13 +3,26 @@ import PhotosUI
 
 @main
 struct MainApp: App {
+    @Environment(\.scenePhase) private var chargingScenePhase
+    @State private var directCharging = ProcessInfo.processInfo.arguments.contains("-charging-direct-ui-test")
     @State private var directListening = ProcessInfo.processInfo.arguments.contains("-listening-direct-ui-test")
     var body: some Scene {
         WindowGroup {
             Group {
-                if directListening { ListeningView(onHome: { directListening = false }) }
+                if directCharging { ChargingView(onHome: { directCharging = false }) }
+                else if directListening { ListeningView(onHome: { directListening = false }) }
                 else { HomeView() }
             }.preferredColorScheme(.dark)
+                .onAppear { ChargingMonitor.shared.setActive(chargingScenePhase == .active) }
+                .onChange(of: chargingScenePhase) { phase in ChargingMonitor.shared.setActive(phase == .active) }
+                .onOpenURL { url in
+                    guard url.scheme == "maincharge" else { return }
+                    if url.host == "stop" { ChargingMonitor.shared.setEnabled(false) }
+                    else {
+                        directCharging = true
+                        ChargingMonitor.shared.setEnabled(true)
+                    }
+                }
         }
     }
 }
@@ -1066,7 +1079,12 @@ struct SlotPage: View {
     let dragChanged: (CGFloat) -> Void
     let dragEnded: (Bool) -> Void
     var body: some View {
-        if slot == 2 {
+        if slot == 3 {
+            ChargingView(onHome: close)
+                .padding(.top, safeTop)
+                .padding(.bottom, 16)
+                .background(Color(uiColor: .systemGroupedBackground))
+        } else if slot == 2 {
             ListeningView(onHome: close)
                 .padding(.top, safeTop)
                 .padding(.bottom, 16)

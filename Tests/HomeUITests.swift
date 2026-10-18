@@ -2,6 +2,26 @@ import XCTest
 
 final class HomeUITests: XCTestCase {
     @MainActor
+    func testChargingMonitor() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-charging-direct-ui-test"]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["充電モニター"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["charging-power"].exists)
+        capture("charging-dashboard")
+        app.swipeUp()
+        app.swipeUp()
+        let diagnostics = app.buttons["取得状況・USB-C PD・診断"]
+        if !diagnostics.isHittable { app.swipeUp() }
+        XCTAssertTrue(diagnostics.waitForExistence(timeout: 5))
+        diagnostics.tap()
+        XCTAssertTrue(app.navigationBars["取得診断"].waitForExistence(timeout: 5))
+        capture("charging-diagnostics")
+        app.buttons["閉じる"].tap()
+        app.buttons["ホームへ戻る"].tap()
+        XCTAssertTrue(app.buttons["アプリ 1"].waitForExistence(timeout: 10))
+    }
+    @MainActor
     func testHomeAndFolderNavigation() {
         executionTimeAllowance = 180
         let app = XCUIApplication()
@@ -21,8 +41,7 @@ final class HomeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["アプリ 3"].waitForExistence(timeout: 5))
         capture("02-folder")
         app.buttons["アプリ 3"].tap()
-        XCTAssertTrue(app.staticTexts["ページ 3"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.navigationBars.count, 0, "番号ページに標準の戻るバーを重ねない")
+        XCTAssertTrue(app.navigationBars["充電モニター"].waitForExistence(timeout: 5))
         capture("03-page")
         app.buttons["ホームへ戻る"].tap()
         XCTAssertTrue(app.buttons["フォルダを閉じる"].waitForExistence(timeout: 5))

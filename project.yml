@@ -2,7 +2,7 @@ name: main
 options:
   bundleIdPrefix: com.kakikukeko
   deploymentTarget:
-    iOS: '16.0'
+    iOS: '26.0'
 settings:
   base:
     APP_GROUP: group.com.kakikukeko.main.pcfilebridge
@@ -10,8 +10,10 @@ targets:
   main:
     type: application
     platform: iOS
-    sources: [Main, BridgeShared]
+    sources: [Main, BridgeShared, ChargingShared]
     dependencies:
+      - target: ChargingWidget
+        embed: true
       - target: PCFileBridgeFileProvider
         embed: true
     info:
@@ -21,6 +23,10 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
+        NSSupportsLiveActivities: true
+        CFBundleURLTypes:
+          - CFBundleURLName: charging
+            CFBundleURLSchemes: [maincharge]
         UIBackgroundModes: [audio]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSLocalNetworkUsageDescription: Windows PCを検出し、選択した共有フォルダーへ接続します。
@@ -74,6 +80,25 @@ targets:
         SWIFT_VERSION: '5.0'
         MARKETING_VERSION: '1.0.0'
         CURRENT_PROJECT_VERSION: '1'
+  ChargingWidget:
+    type: app-extension
+    platform: iOS
+    sources: [ChargingWidget, ChargingShared]
+    info:
+      path: ChargingWidget/Info.plist
+      properties:
+        CFBundleDisplayName: 充電モニター
+        CFBundleShortVersionString: '1.0.0'
+        CFBundleVersion: '1'
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kakikukeko.main.ChargingWidget
+        CODE_SIGN_ENTITLEMENTS: Main/Main.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        SWIFT_VERSION: '5.0'
   mainUITests:
     type: bundle.ui-testing
     platform: iOS

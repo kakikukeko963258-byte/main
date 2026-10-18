@@ -19,6 +19,7 @@ cat > "$ENTITLEMENTS" <<'EOF'
 </dict></plist>
 EOF
 /usr/bin/codesign --force --sign - --entitlements "$ENTITLEMENTS" "$EXT_PATH"
+/usr/bin/codesign --force --sign - --entitlements "$ENTITLEMENTS" "$APP_PATH/PlugIns/ChargingWidget.appex"
 /usr/bin/codesign --force --sign - --entitlements "$ENTITLEMENTS" "$APP_PATH"
 /usr/bin/codesign --verify --deep --strict "$APP_PATH"
 mkdir -p dist/Payload
