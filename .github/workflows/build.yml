@@ -32,7 +32,7 @@ jobs:
         run: xcodegen generate
       - name: Verify charge prediction
         run: |
-          swiftc Main/Charging/ChargeEstimator.swift scripts/ChargeEstimatorChecks.swift -o /tmp/charge-checks
+          swiftc Main/Charging/ChargeEstimator.swift Main/Charging/ChargingHistory.swift scripts/ChargeEstimatorChecks.swift -o /tmp/charge-checks
           /tmp/charge-checks
       - name: Build iPhone app
         run: |
@@ -74,7 +74,7 @@ jobs:
           trap 'kill -INT "$RECORD_PID" 2>/dev/null || true' EXIT
           TEST_FILTER=()
           if [ "$ONLY_CHARGING" = "true" ]; then
-            TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testChargingMonitor -only-testing:mainUITests/HomeUITests/testListeningChapterPlaybackAndHighlight)
+            TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testChargingMonitor -only-testing:mainUITests/HomeUITests/testChargingPiP -only-testing:mainUITests/HomeUITests/testListeningChapterPlaybackAndHighlight)
           fi
           if [ "$ONLY_LISTENING" = "true" ]; then
             TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testListeningChapterPlaybackAndHighlight)

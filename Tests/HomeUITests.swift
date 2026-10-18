@@ -8,6 +8,8 @@ final class HomeUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.navigationBars["充電モニター"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["charging-power"].exists)
+        XCTAssertTrue(app.staticTexts["charging-cadence"].exists)
+        XCTAssertTrue(app.buttons["charging-pip"].exists)
         capture("charging-dashboard")
         app.swipeUp()
         app.swipeUp()
@@ -20,6 +22,32 @@ final class HomeUITests: XCTestCase {
         app.buttons["閉じる"].tap()
         app.buttons["ホームへ戻る"].tap()
         XCTAssertTrue(app.buttons["アプリ 1"].waitForExistence(timeout: 10))
+    }
+    @MainActor
+    func testChargingPiP() throws {
+        executionTimeAllowance = 180
+        let app = XCUIApplication()
+        app.launchArguments = ["-charging-direct-ui-test"]
+        app.launch()
+        let button = app.buttons["charging-pip"]
+        XCTAssertTrue(button.waitForExistence(timeout: 15))
+        if !button.isEnabled { throw XCTSkip("PiP is unavailable in this simulator runtime") }
+        button.tap()
+        let running = NSPredicate(format: "label == %@", "PiPで測定中")
+        let started = XCTNSPredicateExpectation(predicate: running, object: app.staticTexts["charging-pip-status"])
+        if XCTWaiter.wait(for: [started], timeout: 15) != .completed {
+            capture("charging-pip-unavailable")
+            throw XCTSkip("Simulator did not permit sample-buffer PiP: \(app.staticTexts["charging-pip-status"].label)")
+        }
+        capture("charging-pip-running")
+        XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 10)
+        capture("charging-pip-background")
+        app.activate()
+        let label = app.staticTexts["charging-background-count"].label
+        let count = Int(label.components(separatedBy: ": ").last ?? "0") ?? 0
+        XCTAssertGreaterThan(count, 0, "PiP must perform actual reads while the app is in the background")
+        if app.buttons["charging-pip"].label.contains("終了") { app.buttons["charging-pip"].tap() }
     }
     @MainActor
     func testHomeAndFolderNavigation() {

@@ -21,6 +21,7 @@ actor SensorProbe {
 
     private let battery: IOKitBattery?
     private let sensors: HIDSensors?
+    private var lastScan = Date.distantPast
 
     init() {
         let battery = IOKitBattery()
@@ -37,8 +38,9 @@ actor SensorProbe {
     /// enter the following sample.
     func read(lastExternalConnected: Bool?, periodicRescan: Bool) -> Result {
         let (snapshot, sources) = probe()
-        if lastExternalConnected != snapshot.externalConnected || periodicRescan {
+        if lastExternalConnected != snapshot.externalConnected || periodicRescan || Date().timeIntervalSince(lastScan) >= 30 {
             sensors?.rescan()
+            lastScan = Date()
         }
         return Result(snapshot: snapshot,
                       sources: sources,

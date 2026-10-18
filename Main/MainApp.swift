@@ -13,6 +13,9 @@ struct MainApp: App {
                 else if directListening { ListeningView(onHome: { directListening = false }) }
                 else { HomeView() }
             }.preferredColorScheme(.dark)
+                .background(alignment: .topLeading) {
+                    ChargingPiPStage().frame(width: 16, height: 9).opacity(0.02).allowsHitTesting(false)
+                }
                 .onAppear { ChargingMonitor.shared.setActive(chargingScenePhase == .active) }
                 .onChange(of: chargingScenePhase) { phase in ChargingMonitor.shared.setActive(phase == .active) }
                 .onOpenURL { url in

@@ -24,6 +24,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
         CFBundleURLTypes:
           - CFBundleURLName: charging
             CFBundleURLSchemes: [maincharge]

@@ -4,13 +4,13 @@ import Charts
 struct ChargingView: View {
     var onHome: () -> Void
     @ObservedObject private var monitor = ChargingMonitor.shared
+    @ObservedObject private var pip = ChargingPiP.shared
     @State private var showDiagnostics = false
-    @State private var historyHours = 1
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    TimelineView(.periodic(from: .now, by: 5)) { context in
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
                         VStack(alignment: .leading, spacing: 12) {
                             Label(monitor.state.connected ? "電源に接続中" : "バッテリー使用中", systemImage: "bolt.fill")
                                 .foregroundStyle(.green)
@@ -30,6 +30,21 @@ struct ChargingView: View {
                             if monitor.state.date != .distantPast {
                                 Text("測定: \(monitor.state.date.formatted(date: .omitted, time: .standard))").font(.caption).foregroundStyle(.secondary)
                             }
+                            Text(String(format: "設定 %.0f ms・実取得 %.1f Hz", monitor.interval * 1000, monitor.actualHertz))
+                                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("charging-cadence")
+                            Button {
+                                if pip.running || pip.starting { pip.stop() } else { pip.start() }
+                            } label: {
+                                Label(pip.running || pip.starting ? "小窓の測定を終了" : "小窓で継続測定", systemImage: "pip.enter")
+                            }.buttonStyle(.borderedProminent).tint(.green)
+                                .disabled(!pip.supported || !monitor.enabled)
+                                .accessibilityIdentifier("charging-pip")
+                            Text(pip.status).font(.caption).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("charging-pip-status")
+                            Text("PiP背景取得回数: \(monitor.backgroundReadCount)")
+                                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("charging-background-count")
                         }.padding(.vertical, 12)
                     }
                 }
@@ -40,20 +55,28 @@ struct ChargingView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("履歴") {
-                    Picker("期間", selection: $historyHours) {
-                        Text("1時間").tag(1); Text("6時間").tag(6); Text("24時間").tag(24)
+                    Picker("期間", selection: $monitor.chartWindow) {
+                        Text("1分").tag(60.0); Text("10分").tag(600.0); Text("1時間").tag(3600.0)
+                        Text("6時間").tag(21600.0); Text("24時間").tag(86400.0)
                     }.pickerStyle(.segmented)
                     history("入力電力・実測由来", unit: "W", color: .green, value: { $0.watts })
                     history("バッテリー温度", unit: "°C", color: .orange, value: { $0.temperature })
                     history("残量", unit: "%", color: .blue, value: { $0.percent.map(Double.init) })
-                    Text("欠測区間は線をつなぎません。履歴は端末内に最大7日間・12,000点保存します。")
+                    Text("グラフは取得のたびに更新。直近2分は最大10Hz、長期履歴は10秒間隔で最大7日間・12,000点を保存。長い期間は最大・最小を残して描画点を整理します。欠測区間は線をつなぎません。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("動作設定") {
                     Toggle("充電を監視", isOn: Binding(get: { monitor.enabled }, set: { monitor.setEnabled($0) }))
                     Toggle("Live Activity", isOn: $monitor.liveEnabled)
+                    Picker("取得・グラフの更新間隔", selection: $monitor.interval) {
+                        Text("最速 0.1秒 / 10Hz").tag(0.1)
+                        Text("0.25秒 / 4Hz").tag(0.25)
+                        Text("1秒 / 1Hz").tag(1.0)
+                    }
                     if !monitor.activityMessage.isEmpty { Text(monitor.activityMessage).font(.caption).foregroundStyle(.orange) }
-                    Text("前面では約2秒間隔。バックグラウンドではiOSにより停止します。Live Activityは20秒で古い値と表示し、停止を検出できた場合は直ちに表示します。接続・切断の自動処理はアプリが動作している間に限られます。")
+                    Text("最速は0.1秒ごとに取得を試行し、画面・グラフ・PiPを更新します。センサー自体の更新頻度は端末に依存します。PiP開始後はバックグラウンド・ロック中も継続を試みます。PiPを閉じると背景測定は停止します。発熱や消費電力が増える場合は間隔を延ばしてください。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Live Activityは1秒間隔で更新を試行、ウィジェットは15秒ごとに更新を要求。表示頻度はiOSが決定します。充電予測と共有キャッシュは1秒間隔。更新停止時は古い値と表示します。強制終了やOSによるPiP停止後の継続はできません。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("自動起動の設定") {
@@ -98,7 +121,7 @@ struct ChargingView: View {
     }
     private func history(_ title: String, unit: String, color: Color,
                          value: @escaping (ChargeSample) -> Double?) -> some View {
-        let visible = monitor.samples.filter { Date().timeIntervalSince($0.date) < Double(historyHours) * 3600 }
+        let visible = monitor.samples
         // Missing readings, suspension gaps and session changes each start a new line.
         var segment = 0
         var prior: ChargeSample?

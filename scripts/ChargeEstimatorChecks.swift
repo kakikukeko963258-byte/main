@@ -23,5 +23,17 @@ import Foundation
         gap[gap.count - 1].date = now.addingTimeInterval(120)
         assert(ChargeEstimator.eta(target: 80, now: now.addingTimeInterval(120), percent: 56, session: session, samples: gap) == nil)
         print("Charge prediction: taper, history, missing data, stale data, holds and session boundaries passed")
+        var dense = (0..<6000).map { i in ChargeSample(date: now.addingTimeInterval(Double(i) / 10),
+            session: session, percent: 50, watts: 5, temperature: 30, charging: true) }
+        dense[2345].watts = 27
+        dense[3456].temperature = 42
+        dense[4200].watts = nil
+        let reduced = ChargingHistory.chart(dense)
+        assert(reduced.count < 1000)
+        assert(reduced.contains { $0.watts == 27 }, "Keep narrow power spikes")
+        assert(reduced.contains { $0.temperature == 42 }, "Keep narrow temperature spikes")
+        assert(reduced.contains { $0.watts == nil }, "Keep gaps instead of drawing across them")
+        assert(reduced.last?.date == dense.last?.date, "Always show the newest sample")
+        print("Fast chart: spike/gap preservation, bounded rendering and latest sample passed")
     }
 }
