@@ -23,12 +23,16 @@ struct HomeItem: Identifiable, Codable, Equatable {
 }
 
 final class HomeStore: ObservableObject {
-    @Published var items: [HomeItem] { didSet { save() } }
+    @Published var items: [HomeItem] { didSet { reconcilePages(); save() } }
+    @Published private(set) var itemPages: [String: Int] = [:]
+    @Published private(set) var pageCount = 1
     @Published private(set) var hiddenSlots: [Int] = UserDefaults.standard.array(forKey: "hidden-slots") as? [Int] ?? []
     init() {
         if ProcessInfo.processInfo.arguments.contains("-reset-home") {
             UserDefaults.standard.removeObject(forKey: "home-layout-v2")
             UserDefaults.standard.removeObject(forKey: "hidden-slots")
+            UserDefaults.standard.removeObject(forKey: "home-item-pages-v1")
+            UserDefaults.standard.removeObject(forKey: "home-page-count-v1")
             hiddenSlots = []
         }
         if let data = UserDefaults.standard.data(forKey: "home-layout-v2"),
@@ -44,11 +48,36 @@ final class HomeStore: ObservableObject {
             hiddenSlots = []
             UserDefaults.standard.removeObject(forKey: "hidden-slots")
         }
+        itemPages = UserDefaults.standard.dictionary(forKey: "home-item-pages-v1") as? [String: Int] ?? [:]
+        pageCount = max(1, UserDefaults.standard.integer(forKey: "home-page-count-v1"))
+        reconcilePages()
+        save()
+    }
+    func pageNumber(_ id: String) -> Int { itemPages[id] ?? 0 }
+    func addPage() -> Int {
+        let next = pageCount
+        pageCount += 1
+        save()
+        return next
+    }
+    private func reconcilePages() {
+        var result: [String: Int] = [:]
+        var counts: [Int: Int] = [:]
+        for item in items {
+            var destination = max(0, itemPages[item.id] ?? 0)
+            while counts[destination, default: 0] >= 24 { destination += 1 }
+            result[item.id] = destination
+            counts[destination, default: 0] += 1
+        }
+        itemPages = result
+        pageCount = max(pageCount, (result.values.max() ?? 0) + 1)
     }
     private func save() {
         if let data = try? JSONEncoder().encode(items) {
             UserDefaults.standard.set(data, forKey: "home-layout-v2")
         }
+        UserDefaults.standard.set(itemPages, forKey: "home-item-pages-v1")
+        UserDefaults.standard.set(pageCount, forKey: "home-page-count-v1")
     }
     func removeFromHome(_ id: String) {
         guard let item = items.first(where: { $0.id == id }) else { return }
@@ -83,11 +112,25 @@ final class HomeStore: ObservableObject {
         var result = items
         result[index].slots.removeAll { $0 == slot }
         if result[index].slots.count == 1 { result[index].name = "\(result[index].slots[0])" }
-        result.append(HomeItem(id: UUID().uuidString, name: "\(slot)", slots: [slot]))
+        let extracted = HomeItem(id: UUID().uuidString, name: "\(slot)", slots: [slot])
+        itemPages[extracted.id] = pageNumber(id)
+        result.append(extracted)
         items = result
     }
     func applyOrder(_ order: [HomeItem]) {
         guard order.count == items.count, Set(order.map(\.id)) == Set(items.map(\.id)) else { return }
+        items = order
+    }
+    func place(_ id: String, on destination: Int, order: [HomeItem]) {
+        guard destination >= 0, order.count == items.count,
+              Set(order.map(\.id)) == Set(items.map(\.id)) else { return }
+        let original = pageNumber(id)
+        itemPages[id] = destination
+        let residents = order.filter { pageNumber($0.id) == destination }
+        if residents.count > 24, let overflow = residents.last(where: { $0.id != id }) {
+            itemPages[overflow.id] = original
+        }
+        pageCount = max(pageCount, destination + 1)
         items = order
     }
     func orderSlots(_ slots: [Int], in id: String) {
@@ -213,6 +256,9 @@ struct HomeView: View {
     @State private var dragTranslation = CGSize.zero
     @State private var hoveredID: String?
     @State private var hoverStart = Date.distantPast
+    @State private var hoverAnchor = CGPoint.zero
+    @State private var pendingTarget: String?
+    @State private var dragTargetPage: Int?
     @State private var suppressTapUntil = Date.distantPast
     @State private var folderDraggedSlot: Int?
     private var folderMotion: Animation { reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.42, dampingFraction: 0.86) }
@@ -293,10 +339,17 @@ struct HomeView: View {
                         .allowsHitTesting(false).accessibilityHidden(true).zIndex(20)
                 }
                 if editing && draggedItem == nil {
-                    Button("完了", action: finishEditing)
-                        .buttonStyle(.plain)
-                        .font(.system(size: 15, weight: .semibold))
-                        .padding(.horizontal, 16).padding(.vertical, 9).homeGlass(24)
+                    HStack(spacing: 16) {
+                        if folderID == nil {
+                            Button {
+                                let next = store.addPage()
+                                withAnimation(reorderMotion) { page = next }
+                            } label: { Label("ページを追加", systemImage: "plus.rectangle") }
+                                .padding(.horizontal, 14).padding(.vertical, 9).homeGlass(24)
+                        }
+                        Button("完了", action: finishEditing)
+                            .padding(.horizontal, 16).padding(.vertical, 9).homeGlass(24)
+                    }.buttonStyle(.plain).font(.system(size: 15, weight: .semibold))
                         .position(x: geometry.size.width / 2, y: geometry.size.height * 1706.5 / 2048).zIndex(25)
                 }
                 if selectedSlot == nil && folderID == nil && !editing && !switcherVisible {
@@ -368,7 +421,7 @@ struct HomeView: View {
             if let item = removalItem {
                 Button("ホーム画面から取り除く", role: .destructive) {
                     store.removeFromHome(item.id)
-                    page = min(page, max(0, (store.items.count - 1) / 24))
+                    page = min(page, store.pageCount - 1)
                     removalItem = nil
                 }
             }
@@ -424,11 +477,12 @@ struct HomeView: View {
                 let point = CGPoint(x: dragOrigin.midX + translation.width, y: dragOrigin.midY + translation.height)
                 if !metrics.folderRect.insetBy(dx: -12, dy: -12).contains(point) {
                     store.extract(slot, from: id)
-                    if let extracted = store.items.first(where: { $0.slots == [slot] }),
-                       let target = store.items.enumerated().first(where: { index, candidate in
-                           index / 24 == page && candidate.id != extracted.id && metrics.iconRect(index % 24).contains(point)
-                       })?.element {
-                        store.move(source: extracted.id, target: target.id)
+                    if let extracted = store.items.first(where: { $0.slots == [slot] }) {
+                        let candidates = store.items.filter { store.pageNumber($0.id) == page && $0.id != extracted.id }
+                        if let target = candidates.enumerated().first(where: { metrics.iconRect($0.offset).contains(point) })?.element {
+                            store.move(source: extracted.id, target: target.id)
+                        }
+                        store.place(extracted.id, on: page, order: store.items)
                     }
                     closeFolder()
                 } else if let slots = folderPreview { store.orderSlots(slots, in: id) }
@@ -450,20 +504,32 @@ struct HomeView: View {
     }
     private var reorderMotion: Animation { reduceMotion ? .linear(duration: 0.01) : .spring(response: 0.27, dampingFraction: 0.86) }
     private var displayedItems: [HomeItem] { dragPreview ?? store.items }
+    private func displayPage(_ item: HomeItem) -> Int {
+        if draggedItem?.id == item.id, let target = dragTargetPage { return target }
+        if let dragged = draggedItem, let target = dragTargetPage,
+           target != store.pageNumber(dragged.id), store.pageNumber(item.id) == target {
+            let residents = displayedItems.filter { $0.id != dragged.id && store.pageNumber($0.id) == target }
+            if residents.count >= 24 && residents.last?.id == item.id { return store.pageNumber(dragged.id) }
+        }
+        return store.pageNumber(item.id)
+    }
+    private func localIndex(_ item: HomeItem) -> Int {
+        displayedItems.filter { displayPage($0) == displayPage(item) }.firstIndex(where: { $0.id == item.id }) ?? 0
+    }
     private func homePages(_ metrics: HomeMetrics) -> some View {
         ZStack {
             // One stable ForEach keeps the touched view alive while its slot changes,
             // including a move across a page boundary. Only positions animate.
             ZStack(alignment: .topLeading) {
                 Color.clear
-                    .frame(width: CGFloat(max(1, (store.items.count + 23) / 24)) * metrics.size.width,
+                    .frame(width: CGFloat(store.pageCount) * metrics.size.width,
                            height: metrics.size.height)
                     .contentShape(Rectangle()).onTapGesture(perform: finishEditing)
-                ForEach(Array(displayedItems.enumerated()), id: \.element.id) { index, item in
-                    let rect = metrics.iconRect(index % 24)
+                ForEach(displayedItems) { item in
+                    let rect = metrics.iconRect(localIndex(item))
                     homeTile(item, metrics: metrics, rect: rect)
                         .frame(width: metrics.cell, height: metrics.tileHeight)
-                        .position(x: rect.midX + CGFloat(index / 24) * metrics.size.width,
+                        .position(x: rect.midX + CGFloat(displayPage(item)) * metrics.size.width,
                                   y: rect.minY + metrics.tileHeight / 2)
                         .opacity(folderID == item.id || (selectedSlot.map { item.slots == [$0] } ?? false) ? 0 : 1)
                 }
@@ -473,18 +539,31 @@ struct HomeView: View {
             .clipped().contentShape(Rectangle())
             .animation(.spring(response: 0.32, dampingFraction: 0.94), value: page)
             .simultaneousGesture(DragGesture(minimumDistance: 25).onChanged { value in
-                guard !editing && draggedItem == nil else { return }
+                guard draggedItem == nil else { return }
                 pagePan = value.translation.width
             }.onEnded { value in
-                guard !editing && draggedItem == nil else { return }
+                guard draggedItem == nil else { return }
                 let delta = value.predictedEndTranslation.width
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.94)) {
-                    if delta < -metrics.size.width * 0.2 { page = min(page + 1, max(0, (store.items.count - 1) / 24)) }
+                    if delta < -metrics.size.width * 0.2 { page = min(page + 1, store.pageCount - 1) }
                     if delta > metrics.size.width * 0.2 { page = max(0, page - 1) }
                     pagePan = 0
                 }
             })
-            Button { finishEditing(); showSearch = true } label: {
+            if store.pageCount > 1 {
+                HStack(spacing: 8) {
+                    if store.pageCount <= 9 {
+                        ForEach(0..<store.pageCount, id: \.self) { number in
+                            Button { withAnimation(reorderMotion) { page = number } } label: {
+                                Circle().fill(.white.opacity(number == page ? 1 : 0.35)).frame(width: 6, height: 6)
+                                    .padding(.vertical, 8)
+                            }.buttonStyle(.plain).accessibilityLabel("ページ \(number + 1)")
+                        }
+                    } else { Text("\(page + 1) / \(store.pageCount)").font(.system(size: 12)) }
+                }.position(x: metrics.size.width / 2, y: metrics.size.height * 0.79)
+            }
+            if !editing {
+                Button { finishEditing(); showSearch = true } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "magnifyingglass").font(.system(size: metrics.label, weight: .semibold))
                     Text("検索").font(.system(size: metrics.label, weight: .medium))
@@ -493,6 +572,7 @@ struct HomeView: View {
                 .homeGlass(40)
             }.buttonStyle(IconPressStyle())
                 .position(x: metrics.size.width / 2, y: metrics.size.height * 1706.5 / 2048)
+            }
         }
     }
     private func homeTile(_ item: HomeItem, metrics: HomeMetrics, rect: CGRect) -> some View {
@@ -582,6 +662,7 @@ struct HomeView: View {
         editing = true
         draggedItem = item
         dragPreview = store.items
+        dragTargetPage = store.pageNumber(item.id)
     }
     private func updateHomeLift(_ translation: CGSize, metrics: HomeMetrics) {
         guard let item = draggedItem, var preview = dragPreview,
@@ -593,22 +674,59 @@ struct HomeView: View {
             let rect = metrics.iconRect(index)
             return CGRect(x: rect.midX - metrics.cell / 2, y: rect.minY - 12,
                           width: metrics.cell, height: metrics.tileHeight + 18).contains(point)
-        }) else { hoveredID = nil; hoverCell = nil; return }
-        let to = min(preview.count - 1, page * 24 + local)
-        if hoverCell != to {
-            hoverCell = to
-            hoveredID = preview[to].id == item.id ? nil : preview[to].id
-            hoverStart = Date()
+        }) else { clearFolderHover(); pendingTarget = nil; return }
+        let residents = preview.filter { displayPage($0) == page }
+        if local >= residents.count {
+            clearFolderHover()
+            pendingTarget = nil
+            preview.remove(at: from)
+            let last = preview.lastIndex(where: { displayPage($0) == page })
+            preview.insert(item, at: last.map { $0 + 1 } ?? preview.count)
+            withAnimation(reorderMotion) { dragPreview = preview }
+            return
         }
+        guard residents[local].id != item.id,
+              let to = preview.firstIndex(where: { $0.id == residents[local].id }) else {
+            clearFolderHover()
+            pendingTarget = nil
+            return
+        }
+        let target = residents[local]
+        pendingTarget = target.id
+        let rect = metrics.iconRect(local)
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = metrics.icon * 0.34
+        if hypot(point.x - center.x, point.y - center.y) < radius {
+            if hoveredID != target.id {
+                hoveredID = target.id
+                hoverStart = Date()
+                hoverAnchor = center
+            }
+            hoverCell = local
+            return
+        }
+        clearFolderHover()
         guard from != to else { return }
         preview.remove(at: from)
         preview.insert(item, at: to)
         withAnimation(reorderMotion) { dragPreview = preview }
     }
     private func finishMove(_ item: HomeItem) {
-        if let target = hoveredID, Date().timeIntervalSince(hoverStart) > 0.65 {
+        let point = CGPoint(x: dragOrigin.midX + dragTranslation.width, y: dragOrigin.midY + dragTranslation.height)
+        let radius = screenSize.width * 156 / 947 * 0.34
+        let destination = dragTargetPage ?? store.pageNumber(item.id)
+        if let target = hoveredID, Date().timeIntervalSince(hoverStart) > 0.65,
+           hypot(point.x - hoverAnchor.x, point.y - hoverAnchor.y) < radius,
+           store.items.contains(where: { $0.id == target && store.pageNumber($0.id) == page }) {
             withAnimation(reorderMotion) { store.merge(source: item.id, target: target) }
-        } else if let preview = dragPreview { store.applyOrder(preview) }
+        } else if var preview = dragPreview {
+            if let target = pendingTarget, let from = preview.firstIndex(where: { $0.id == item.id }),
+               let to = preview.firstIndex(where: { $0.id == target }) {
+                let moving = preview.remove(at: from)
+                preview.insert(moving, at: min(to, preview.count))
+            }
+            store.place(item.id, on: destination, order: preview)
+        }
         cancelLift()
         suppressTapUntil = Date().addingTimeInterval(0.25)
     }
@@ -621,6 +739,9 @@ struct HomeView: View {
         dragTranslation = .zero
         hoveredID = nil
         hoverCell = nil
+        hoverStart = .distantPast
+        pendingTarget = nil
+        dragTargetPage = nil
         edgeDirection = 0
         pagePan = 0
     }
@@ -632,8 +753,18 @@ struct HomeView: View {
         let originalPage = page
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
             guard edgeDirection == direction && draggedItem != nil && page == originalPage else { return }
-            page = min(max(0, page + direction), max(0, (store.items.count - 1) / 24))
+            let destination = max(0, page + direction)
+            if destination >= store.pageCount { _ = store.addPage() }
+            clearFolderHover()
+            pendingTarget = nil
+            dragTargetPage = destination
+            withAnimation(reorderMotion) { page = destination }
         }
+    }
+    private func clearFolderHover() {
+        hoveredID = nil
+        hoverCell = nil
+        hoverStart = .distantPast
     }
     private func open(_ slot: Int, source: CGRect) {
         guard !editing && Date() > suppressTapUntil else { return }
@@ -683,7 +814,7 @@ struct HomeView: View {
     }
     private func resumeFromSwitcher(_ slot: Int, source: CGRect) {
         recentApps.opened(slot)
-        if let index = store.items.firstIndex(where: { $0.slots.contains(slot) }) { page = index / 24 }
+        if let item = store.items.first(where: { $0.slots.contains(slot) }) { page = store.pageNumber(item.id) }
         appSource = source
         appFromSwitcher = true
         appInteracting = true
@@ -719,8 +850,10 @@ struct HomeView: View {
         guard let index = store.items.firstIndex(where: { $0.slots.contains(slot) }) else {
             return CGRect(x: screenSize.width / 2 - 30, y: screenSize.height / 2 - 30, width: 60, height: 60)
         }
-        let rect = metrics.iconRect(index % 24)
         let item = store.items[index]
+        let residents = store.items.filter { store.pageNumber($0.id) == store.pageNumber(item.id) }
+        let local = residents.firstIndex(where: { $0.id == item.id }) ?? 0
+        let rect = metrics.iconRect(local)
         if item.isFolder, let position = item.slots.firstIndex(of: slot) {
             return metrics.previewRect(position % 9, source: rect)
         }
@@ -753,7 +886,7 @@ struct HomeView: View {
                                 if store.hiddenSlots.contains(slot) {
                                     Button("ホーム画面に戻す") {
                                         store.restore(slot)
-                                        page = max(0, (store.items.count - 1) / 24)
+                                        if let item = store.items.first(where: { $0.slots == [slot] }) { page = store.pageNumber(item.id) }
                                     }
                                 }
                             }

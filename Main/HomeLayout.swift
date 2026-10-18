@@ -223,10 +223,12 @@ struct AppTransitionLayer: UIViewControllerRepresentable {
                             close: close, dragChanged: dragChanged, dragEnded: dragEnded)
         let controller = AppWindowController(page: page, size: size, source: source, sourceIsCard: sourceIsCard)
         controller.previewRequest = previewRequest
+        controller.windowView.saveSettledPreview = { image in savePreview(slot, image) }
         registerWindow(controller.windowView)
         return controller
     }
     func updateUIViewController(_ controller: AppWindowController, context: Context) {
+        controller.windowView.saveSettledPreview = { image in savePreview(slot, image) }
         controller.windowView.configureSource(source, isCard: sourceIsCard)
         if controller.previewRequest != previewRequest || (progress == 0 && controller.lastProgress > 0) {
             controller.previewRequest = previewRequest
@@ -259,6 +261,7 @@ final class AppWindowController: UIViewController {
 }
 
 final class AppWindowView: UIView {
+    var saveSettledPreview: ((UIImage) -> Void)?
     fileprivate let host: UIHostingController<SlotPage>
     private let surface = UIView()
     private let icon = UIImageView()
@@ -318,8 +321,10 @@ final class AppWindowView: UIView {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
-        return UIGraphicsImageRenderer(size: pageSize, format: format).image { _ in
-            host.view.drawHierarchy(in: CGRect(origin: .zero, size: pageSize), afterScreenUpdates: false)
+        return UIGraphicsImageRenderer(size: pageSize, format: format).image { context in
+            if !host.view.drawHierarchy(in: CGRect(origin: .zero, size: pageSize), afterScreenUpdates: true) {
+                host.view.layer.render(in: context.cgContext)
+            }
         }
     }
 
@@ -409,6 +414,11 @@ final class AppWindowView: UIView {
         host.view.setNeedsLayout()
         host.view.layoutIfNeeded()
         UIAccessibility.post(notification: .screenChanged, argument: nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self, self.currentProgress == 1, self.displayLink == nil,
+                  self.host.view.window != nil, let preview = self.previewImage() else { return }
+            self.saveSettledPreview?(preview)
+        }
     }
     private func apply(_ t: CGFloat, recoil: CGFloat = 0, recoilOffset: CGSize = .zero, recoilSquash: CGFloat = 0) {
         let morph = LaunchMorph(progress: t, source: source, screen: pageSize)

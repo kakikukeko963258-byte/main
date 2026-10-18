@@ -6,6 +6,11 @@ final class RecentApps: ObservableObject {
     @Published private(set) var previews: [Int: UIImage] = [:]
     weak var activeWindow: AppWindowView?
     private let key = "recent-apps-v1"
+    private let imageQueue = DispatchQueue(label: "main.switcher-previews", qos: .utility)
+    private var imageOrder: [Int] = []
+    private var loading = Set<Int>()
+    private let previewDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("SwitcherPreviews", isDirectory: true)
 
     init() {
         if ProcessInfo.processInfo.arguments.contains("-reset-home") {
@@ -15,6 +20,7 @@ final class RecentApps: ObservableObject {
         slots = (UserDefaults.standard.array(forKey: key) as? [Int] ?? []).filter {
             (1...32).contains($0) && seen.insert($0).inserted
         }
+        try? FileManager.default.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
     }
     func opened(_ slot: Int) {
         slots = [slot] + slots.filter { $0 != slot }
@@ -22,14 +28,40 @@ final class RecentApps: ObservableObject {
     }
     func capture(_ image: UIImage, slot: Int) {
         guard slots.contains(slot) else { return }
+        cache(image, slot: slot)
+        let url = previewDirectory.appendingPathComponent("\(slot).jpg")
+        imageQueue.async {
+            if let data = image.jpegData(compressionQuality: 0.8) {
+                try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            }
+        }
+    }
+    private func cache(_ image: UIImage, slot: Int) {
         previews[slot] = image
-        // Persist only the IDs. Actual page images stay on this device in RAM.
-        let retained = Set(slots.prefix(8))
+        imageOrder = [slot] + imageOrder.filter { $0 != slot }
+        imageOrder = Array(imageOrder.prefix(8))
+        let retained = Set(imageOrder)
         previews = previews.filter { retained.contains($0.key) }
+    }
+    func loadPreview(_ slot: Int) {
+        guard previews[slot] == nil, !loading.contains(slot) else { return }
+        loading.insert(slot)
+        let url = previewDirectory.appendingPathComponent("\(slot).jpg")
+        imageQueue.async { [weak self] in
+            let image = UIImage(contentsOfFile: url.path)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.loading.remove(slot)
+                if self.slots.contains(slot), self.previews[slot] == nil, let image { self.cache(image, slot: slot) }
+            }
+        }
     }
     func terminate(_ slot: Int) {
         slots.removeAll { $0 == slot }
         previews.removeValue(forKey: slot)
+        imageOrder.removeAll { $0 == slot }
+        let url = previewDirectory.appendingPathComponent("\(slot).jpg")
+        imageQueue.async { try? FileManager.default.removeItem(at: url) }
         UserDefaults.standard.set(slots, forKey: key)
     }
 }
@@ -66,6 +98,7 @@ struct AppSwitcher: View {
                                                  size: card, resume: { resume(slot, $0) },
                                                  terminate: { terminate(slot) })
                                         .id(slot)
+                                        .onAppear { recent.loadPreview(slot) }
                                 }
                             }
                             .switcherTargets()
@@ -123,12 +156,9 @@ private struct SwitcherCard: View {
                     } else {
                         Wallpaper(image: wallpaper)
                         Color.black.opacity(0.15)
-                        VStack(spacing: 18) {
-                            SlotIcon(slot: slot).frame(width: 72, height: 72)
-                            Text(slot == 1 ? "PC File Bridge" : "\(slot)")
-                                .font(.system(size: slot == 1 ? 26 : 54, weight: .light, design: .rounded))
-                            Text(slot == 1 ? "タップして開く" : "ページ \(slot)").font(.subheadline)
-                        }
+                        Text("開くと画面プレビューが保存されます")
+                            .font(.subheadline).multilineTextAlignment(.center)
+                            .foregroundStyle(.white.opacity(0.7)).padding(24)
                     }
                 }
                 .frame(width: size.width, height: size.height)
