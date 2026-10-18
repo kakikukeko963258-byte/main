@@ -4,6 +4,7 @@ import UIKit
 final class RecentApps: ObservableObject {
     @Published private(set) var slots: [Int] = []
     @Published private(set) var previews: [Int: UIImage] = [:]
+    weak var activeWindow: AppWindowView?
     private let key = "recent-apps-v1"
 
     init() {

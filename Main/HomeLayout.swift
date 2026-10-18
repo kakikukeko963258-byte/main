@@ -208,6 +208,7 @@ struct AppTransitionLayer: UIViewControllerRepresentable {
     let sourceIsCard: Bool
     let previewRequest: Int
     let savePreview: (Int, UIImage) -> Void
+    let registerWindow: (AppWindowView) -> Void
     let slot: Int
     let source: CGRect
     let size: CGSize
@@ -222,6 +223,7 @@ struct AppTransitionLayer: UIViewControllerRepresentable {
                             close: close, dragChanged: dragChanged, dragEnded: dragEnded)
         let controller = AppWindowController(page: page, size: size, source: source, sourceIsCard: sourceIsCard)
         controller.previewRequest = previewRequest
+        registerWindow(controller.windowView)
         return controller
     }
     func updateUIViewController(_ controller: AppWindowController, context: Context) {

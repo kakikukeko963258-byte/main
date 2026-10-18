@@ -242,7 +242,8 @@ struct HomeView: View {
                 if let slot = selectedSlot {
                     AppTransitionLayer(progress: reduceMotion ? 1 : appProgress, animated: !reduceMotion, interactive: appInteracting,
                                        sourceIsCard: appFromSwitcher, previewRequest: appPreviewRequest,
-                                       savePreview: { slot, image in recentApps.capture(image, slot: slot) }, slot: slot,
+                                       savePreview: { slot, image in recentApps.capture(image, slot: slot) },
+                                       registerWindow: { recentApps.activeWindow = $0 }, slot: slot,
                                        source: appSource, size: geometry.size, safeTop: safeTop, wallpaper: wallpaper,
                                        close: closeApp,
                                        dragChanged: { amount in
@@ -662,12 +663,16 @@ struct HomeView: View {
     }
     private func presentSwitcher() {
         guard !switcherVisible && !showSearch && draggedItem == nil else { return }
+        if let slot = selectedSlot, let preview = recentApps.activeWindow?.previewImage() {
+            recentApps.capture(preview, slot: slot)
+        } else {
+            appPreviewRequest += 1
+        }
         finishEditing()
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         if let id = folderID { store.rename(id, to: folderName) }
         folderID = nil
         folderProgress = 0
-        appPreviewRequest += 1
         withAnimation(reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.38, dampingFraction: 0.88)) {
             switcherVisible = true
         }
