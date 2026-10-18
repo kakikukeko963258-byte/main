@@ -175,6 +175,10 @@ struct IconPressStyle: ButtonStyle {
 
 struct HomeView: View {
     @StateObject private var store = HomeStore()
+    @StateObject private var recentApps = RecentApps()
+    @State private var switcherVisible = false
+    @State private var appPreviewRequest = 0
+    @State private var appFromSwitcher = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var folderID: String?
@@ -220,14 +224,14 @@ struct HomeView: View {
             let metrics = HomeMetrics(size: geometry.size, homeOffset: (safeTop - safeBottom) / 2)
             ZStack(alignment: .topLeading) {
                 Wallpaper(image: wallpaper)
-                    .blur(radius: reduceMotion ? 0 : 6 * folderProgress)
+                    .blur(radius: reduceMotion ? 0 : (switcherVisible ? 12 : 6 * folderProgress))
                 homePages(metrics)
                     .compositingGroup()
                     .scaleEffect(reduceMotion ? 1 : 1 + 0.07 * folderProgress)
-                    .blur(radius: 10 * folderProgress)
+                    .blur(radius: switcherVisible ? 14 : 10 * folderProgress)
                     .opacity(1 - 0.12 * folderProgress)
-                    .allowsHitTesting(folderID == nil && selectedSlot == nil)
-                    .accessibilityHidden(folderID != nil || selectedSlot != nil)
+                    .allowsHitTesting(folderID == nil && selectedSlot == nil && !switcherVisible)
+                    .accessibilityHidden(folderID != nil || selectedSlot != nil || switcherVisible)
                 if let id = folderID, let item = store.items.first(where: { $0.id == id }) {
                     folderOverlay(item, id: id, metrics: metrics)
                     .opacity(reduceMotion ? folderProgress : 1)
@@ -236,7 +240,9 @@ struct HomeView: View {
                     .zIndex(2)
                 }
                 if let slot = selectedSlot {
-                    AppTransitionLayer(progress: reduceMotion ? 1 : appProgress, animated: !reduceMotion, interactive: appInteracting, slot: slot,
+                    AppTransitionLayer(progress: reduceMotion ? 1 : appProgress, animated: !reduceMotion, interactive: appInteracting,
+                                       sourceIsCard: appFromSwitcher, previewRequest: appPreviewRequest,
+                                       savePreview: { slot, image in recentApps.capture(image, slot: slot) }, slot: slot,
                                        source: appSource, size: geometry.size, safeTop: safeTop, wallpaper: wallpaper,
                                        close: closeApp,
                                        dragChanged: { amount in
@@ -247,7 +253,9 @@ struct HomeView: View {
                         appInteracting = false
                         if dismiss { closeApp() } else { appProgress = 1 }
                     })
-                    .opacity(reduceMotion ? appProgress : 1).zIndex(3)
+                    .id(slot)
+                    .opacity(switcherVisible ? 0 : (reduceMotion ? appProgress : 1))
+                    .allowsHitTesting(!switcherVisible).accessibilityHidden(switcherVisible).zIndex(3)
                 }
                 if let selection = iconMenu {
                     HomeIconMenu(selection: selection, size: geometry.size,
@@ -286,9 +294,31 @@ struct HomeView: View {
                         .padding(.horizontal, 16).padding(.vertical, 9).homeGlass(24)
                         .position(x: geometry.size.width / 2, y: geometry.size.height * 1706.5 / 2048).zIndex(25)
                 }
+                if selectedSlot == nil && folderID == nil && !editing && !switcherVisible {
+                    Button(action: presentSwitcher) {
+                        Image(systemName: "rectangle.on.rectangle")
+                            .font(.system(size: 16, weight: .medium))
+                            .frame(width: 46, height: 30).homeGlass(18)
+                    }.buttonStyle(.plain).accessibilityLabel("最近使ったアプリを開く")
+                        .position(x: geometry.size.width / 2, y: geometry.size.height - safeBottom - 18)
+                        .zIndex(28)
+                }
+                if switcherVisible {
+                    AppSwitcher(recent: recentApps, active: selectedSlot, wallpaper: wallpaper,
+                                resume: resumeFromSwitcher, terminate: terminateRecent, home: switcherHome)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
+                        .zIndex(30)
+                }
             }.frame(width: geometry.size.width, height: geometry.size.height)
                 .coordinateSpace(name: "home")
                 .foregroundStyle(.white)
+                .simultaneousGesture(DragGesture(minimumDistance: 12, coordinateSpace: .named("home")).onEnded { value in
+                    guard !switcherVisible, !showSearch,
+                          value.startLocation.y > geometry.size.height - safeBottom - 64,
+                          value.translation.height < -45,
+                          abs(value.translation.height) > abs(value.translation.width) else { return }
+                    presentSwitcher()
+                })
                 .onAppear {
                     screenSize = geometry.size
                     if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -605,6 +635,8 @@ struct HomeView: View {
         iconMenu = nil
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         appSource = source
+        appFromSwitcher = false
+        recentApps.opened(slot)
         appInteracting = false
         appProgress = 0
         selectedSlot = slot
@@ -614,6 +646,10 @@ struct HomeView: View {
         }
     }
     private func closeApp() {
+        if appFromSwitcher, let slot = selectedSlot {
+            appSource = homeSource(for: slot)
+            appFromSwitcher = false
+        }
         appInteracting = false
         if reduceMotion { withAnimation(appMotion) { appProgress = 0 } }
         else { appProgress = 0 }
@@ -623,6 +659,63 @@ struct HomeView: View {
                 DispatchQueue.main.async { UIAccessibility.post(notification: .screenChanged, argument: nil) }
             }
         }
+    }
+    private func presentSwitcher() {
+        guard !switcherVisible && !showSearch && draggedItem == nil else { return }
+        finishEditing()
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        if let id = folderID { store.rename(id, to: folderName) }
+        folderID = nil
+        folderProgress = 0
+        appPreviewRequest += 1
+        withAnimation(reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.38, dampingFraction: 0.88)) {
+            switcherVisible = true
+        }
+    }
+    private func resumeFromSwitcher(_ slot: Int, source: CGRect) {
+        recentApps.opened(slot)
+        if let index = store.items.firstIndex(where: { $0.slots.contains(slot) }) { page = index / 24 }
+        appSource = source
+        appFromSwitcher = true
+        appInteracting = true
+        appProgress = 0
+        selectedSlot = slot
+        withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.18)) { switcherVisible = false }
+        DispatchQueue.main.async {
+            appInteracting = false
+            if reduceMotion { withAnimation(appMotion) { appProgress = 1 } }
+            else { appProgress = 1 }
+        }
+    }
+    private func terminateRecent(_ slot: Int) {
+        recentApps.terminate(slot)
+        if selectedSlot == slot {
+            selectedSlot = nil
+            appProgress = 0
+            appInteracting = false
+            appFromSwitcher = false
+        }
+    }
+    private func switcherHome() {
+        selectedSlot = nil
+        appProgress = 0
+        appInteracting = false
+        appFromSwitcher = false
+        withAnimation(reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.35, dampingFraction: 0.92)) {
+            switcherVisible = false
+        }
+    }
+    private func homeSource(for slot: Int) -> CGRect {
+        let metrics = HomeMetrics(size: screenSize, homeOffset: (safeTop - safeBottom) / 2)
+        guard let index = store.items.firstIndex(where: { $0.slots.contains(slot) }) else {
+            return CGRect(x: screenSize.width / 2 - 30, y: screenSize.height / 2 - 30, width: 60, height: 60)
+        }
+        let rect = metrics.iconRect(index % 24)
+        let item = store.items[index]
+        if item.isFolder, let position = item.slots.firstIndex(of: slot) {
+            return metrics.previewRect(position % 9, source: rect)
+        }
+        return rect
     }
     private func closeFolder() {
         iconMenu = nil

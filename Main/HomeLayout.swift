@@ -205,6 +205,9 @@ struct AppTransitionLayer: UIViewControllerRepresentable {
     var progress: CGFloat
     let animated: Bool
     let interactive: Bool
+    let sourceIsCard: Bool
+    let previewRequest: Int
+    let savePreview: (Int, UIImage) -> Void
     let slot: Int
     let source: CGRect
     let size: CGSize
@@ -217,9 +220,19 @@ struct AppTransitionLayer: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> AppWindowController {
         let page = SlotPage(slot: slot, wallpaper: wallpaper, safeTop: safeTop,
                             close: close, dragChanged: dragChanged, dragEnded: dragEnded)
-        return AppWindowController(page: page, size: size, source: source)
+        let controller = AppWindowController(page: page, size: size, source: source, sourceIsCard: sourceIsCard)
+        controller.previewRequest = previewRequest
+        return controller
     }
     func updateUIViewController(_ controller: AppWindowController, context: Context) {
+        controller.windowView.configureSource(source, isCard: sourceIsCard)
+        if controller.previewRequest != previewRequest || (progress == 0 && controller.lastProgress > 0) {
+            controller.previewRequest = previewRequest
+            if let preview = controller.windowView.previewImage() {
+                DispatchQueue.main.async { savePreview(slot, preview) }
+            }
+        }
+        controller.lastProgress = progress
         controller.windowView.setProgress(progress, animated: animated && !interactive)
     }
 }
@@ -228,9 +241,11 @@ struct AppTransitionLayer: UIViewControllerRepresentable {
 // hosting controller in UIKit's containment tree while animating the same surface.
 final class AppWindowController: UIViewController {
     let windowView: AppWindowView
+    var previewRequest = 0
+    var lastProgress: CGFloat = 0
 
-    init(page: SlotPage, size: CGSize, source: CGRect) {
-        windowView = AppWindowView(page: page, size: size, source: source)
+    init(page: SlotPage, size: CGSize, source: CGRect, sourceIsCard: Bool) {
+        windowView = AppWindowView(page: page, size: size, source: source, sourceIsCard: sourceIsCard)
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -247,7 +262,8 @@ final class AppWindowView: UIView {
     private let icon = UIImageView()
     private let contourMask = CAShapeLayer()
     private let pageSize: CGSize
-    private let source: CGRect
+    private var source: CGRect
+    private var sourceIsCard: Bool
     private var capture: UIView?
     private var displayLink: CADisplayLink?
     private var currentProgress: CGFloat = 0
@@ -256,10 +272,11 @@ final class AppWindowView: UIView {
     private var animationStarted: CFTimeInterval = 0
     private var animationDuration: CFTimeInterval = LaunchMorph.openingDuration
 
-    init(page: SlotPage, size: CGSize, source: CGRect) {
+    init(page: SlotPage, size: CGSize, source: CGRect, sourceIsCard: Bool) {
         host = UIHostingController(rootView: page)
         pageSize = size
         self.source = source
+        self.sourceIsCard = sourceIsCard
         super.init(frame: CGRect(origin: .zero, size: size))
         backgroundColor = .clear
         surface.frame = bounds
@@ -288,6 +305,22 @@ final class AppWindowView: UIView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     deinit { displayLink?.invalidate() }
 
+    func configureSource(_ source: CGRect, isCard: Bool) {
+        self.source = source
+        sourceIsCard = isCard
+    }
+
+    func previewImage() -> UIImage? {
+        guard !host.view.isHidden else { return nil }
+        host.view.layoutIfNeeded()
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: pageSize, format: format).image { _ in
+            host.view.drawHierarchy(in: CGRect(origin: .zero, size: pageSize), afterScreenUpdates: false)
+        }
+    }
+
     func setProgress(_ progress: CGFloat, animated: Bool) {
         let requested = min(1, max(0, progress))
         let t = animated ? requested : LaunchMorph.progress(forExpansion: requested)
@@ -301,7 +334,7 @@ final class AppWindowView: UIView {
             if let snapshot = host.view.snapshotView(afterScreenUpdates: true) {
                 snapshot.frame = CGRect(origin: .zero, size: pageSize)
                 let expansion = LaunchMorph(progress: currentProgress, source: source, screen: pageSize).expansion
-                let blend = min(1, max(0, (expansion - 0.04) / 0.26))
+                let blend = sourceIsCard ? 1 : min(1, max(0, (expansion - 0.04) / 0.26))
                 snapshot.alpha = blend * blend * (3 - 2 * blend)
                 surface.insertSubview(snapshot, belowSubview: icon)
                 capture = snapshot
@@ -382,10 +415,11 @@ final class AppWindowView: UIView {
         // At zero, half the icon width yields the exact fourth-order icon
         // contour. As the window lengthens, its corners become local corners
         // rather than an enlarged ellipse stretching over the whole screen.
-        let corner = source.width / 2 + (pageSize.width * 0.12 - source.width / 2) * morph.expansion
+        let initialCorner = sourceIsCard ? source.width * 0.107 : source.width / 2
+        let corner = initialCorner + (pageSize.width * 0.12 - initialCorner) * morph.expansion
         var inverseScale = CGAffineTransform(scaleX: 1 / sx, y: 1 / sy)
         let path = WindowContour(corner: corner).path(in: CGRect(origin: .zero, size: morph.size)).cgPath
-        let blend = min(1, max(0, (morph.expansion - 0.04) / 0.26))
+        let blend = sourceIsCard ? 1 : min(1, max(0, (morph.expansion - 0.04) / 0.26))
         let pageAlpha = blend * blend * (3 - 2 * blend)
         CATransaction.begin()
         CATransaction.setDisableActions(true)

@@ -40,6 +40,14 @@ iOS 26以降は標準のLiquid Glassをフォルダと操作ボタンに使用�
 
 ## 1番: PC File Bridge
 
+## App Switcher
+
+main内の画面下部から上へスワイプするか、ホーム下部の重なった四角のボタンで最近使ったページを開きます。左右にカードを切り替え、タップで復帰、上へ払って履歴から終了できます。空白部分またはホームボタンでホームへ戻ります。終了してもホームの配置は変えません。
+
+最近開いた番号は端末に保存し、画面プレビューはメモリ内で最大8枚保持します。PC File Bridgeのカードも静止画で表示し、カードごとに接続処理を起動しません。OSのApp Switcherは通常どおりiPhoneが管理します。
+
+## 1番: PC File Bridge（接続）
+
 ホーム画面の「1」を開くとWindows PCとのペアリング画面を表示します。Windows側のPC File Bridgeを起動し、PCのアドレスと6桁コードを入力すると、共有フォルダーをアプリ内から閲覧でき、File Provider拡張をiPhoneの「ファイル」に登録します。左上の戻るボタンでmainのホームへ戻れます。
 
 本体のBundle IDは`com.kakikukeko.main`、拡張は`com.kakikukeko.main.FileProvider`です。拡張分のApp IDも署名時に必要です。共有領域は`group.com.kakikukeko.main.pcfilebridge`を使い、AltStoreによる末尾の名前変更は署名済みプロファイルから解決します。以前の単独PC File Bridgeアプリの登録情報は引き継がず、mainで再ペアリングします。
