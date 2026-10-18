@@ -131,7 +131,10 @@ final class HomeUITests: XCTestCase {
     @MainActor
     func testListeningChapterPlaybackAndHighlight() {
         let app = XCUIApplication()
-        app.launchArguments = ["-reset-home"]
+        // The launch morph's projective surface leaves stale accessibility
+        // coordinates on this simulator. Exercise the real page with the
+        // standard Reduce Motion path, keeping production animations unchanged.
+        app.launchArguments = ["-reset-home", "-listening-ui-reduced-motion"]
         app.launch()
         let second = app.buttons["アプリ 2"]
         XCTAssertTrue(second.waitForExistence(timeout: 10))

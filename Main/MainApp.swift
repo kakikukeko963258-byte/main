@@ -4,7 +4,12 @@ import PhotosUI
 @main
 struct MainApp: App {
     var body: some Scene {
-        WindowGroup { HomeView().preferredColorScheme(.dark) }
+        WindowGroup {
+            HomeView().preferredColorScheme(.dark)
+                .transformEnvironment(\.accessibilityReduceMotion) { reduced in
+                    if ProcessInfo.processInfo.arguments.contains("-listening-ui-reduced-motion") { reduced = true }
+                }
+        }
     }
 }
 
