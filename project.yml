@@ -87,7 +87,7 @@ targets:
     info:
       path: ChargingWidget/Info.plist
       properties:
-        CFBundleDisplayName: 充電モニター
+        CFBundleDisplayName: Charging Monitor
         CFBundleShortVersionString: '1.0.0'
         CFBundleVersion: '1'
         NSExtension:
