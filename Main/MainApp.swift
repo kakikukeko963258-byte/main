@@ -208,13 +208,24 @@ struct SlotIcon: View {
 
 struct FolderIcon: View {
     let item: HomeItem
+    var liveGlass = true
     var body: some View {
-        Image(uiImage: FolderPreviewArtwork.image(item.slots))
-            .resizable().aspectRatio(1, contentMode: .fit)
-            .modifier(IconGlass())
-            .transaction { $0.animation = nil }
+        Group {
+            if liveGlass {
+                miniatures.modifier(IconGlass())
+            } else {
+                // A live lens refracts the moving miniatures a second time.
+                // In edit mode, move one flat surface just like an app icon.
+                miniatures
+                    .background(LinearGradient(colors: [.white.opacity(0.16), .black.opacity(0.22)],
+                                               startPoint: .topLeading, endPoint: .bottomTrailing), in: IconContour())
+                    .overlay(IconContour().stroke(.white.opacity(0.24), lineWidth: 0.7))
+            }
+        }.transaction { $0.animation = nil }
     }
-
+    private var miniatures: some View {
+        Image(uiImage: FolderPreviewArtwork.image(item.slots)).resizable().aspectRatio(1, contentMode: .fit)
+    }
 }
 
 struct IconPressStyle: ButtonStyle {
@@ -411,7 +422,7 @@ struct HomeView: View {
                           value.translation.height < -45,
                           abs(value.translation.height) > abs(value.translation.width) else { return }
                     presentSwitcher()
-                })
+                }, including: switcherVisible ? .none : .all)
                 .onAppear {
                     screenSize = geometry.size
                     if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -652,18 +663,18 @@ struct HomeView: View {
         } label: {
             VStack(spacing: metrics.labelGap) {
                 Group {
-                    if item.isFolder { FolderIcon(item: item) }
+                    if item.isFolder { FolderIcon(item: item, liveGlass: !editing) }
                     else { SlotIcon(slot: item.slots[0]) }
                 }.frame(width: metrics.icon, height: metrics.icon)
+                    .compositingGroup()
                     .overlay(IconContour().stroke(.white.opacity(hoveredID == item.id ? 0.8 : 0), lineWidth: 2))
+                    .modifier(EditingWiggle(active: editing && draggedItem?.id != item.id, seed: item.slots.first ?? 0))
                 Text(store.dockIDs.contains(item.id) ? "" : item.displayName).font(.system(size: metrics.label)).lineLimit(1)
                     .frame(width: metrics.cell, height: metrics.labelHeight)
                     .shadow(color: .black.opacity(0.35), radius: 1, y: 1)
             }.frame(width: metrics.cell, height: metrics.tileHeight).contentShape(Rectangle())
                 .opacity(draggedItem?.id == item.id || landingItem?.id == item.id ? 0 : 1)
-                .modifier(EditingWiggle(active: editing && draggedItem?.id != item.id,
-                                        seed: item.slots.first ?? 0,
-                                        anchor: UnitPoint(x: 0.5, y: metrics.icon / (2 * metrics.tileHeight))))
+
         }.buttonStyle(IconPressStyle())
             .accessibilityLabel(item.isFolder ? "\(item.name)、\(item.slots.count)個のアプリ" : "アプリ \(item.displayName)")
             .overlay {

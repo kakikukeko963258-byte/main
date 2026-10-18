@@ -74,7 +74,6 @@ struct AppSwitcher: View {
     let terminate: (Int) -> Void
     let home: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var centeredSlot: Int?
 
     var body: some View {
         GeometryReader { geometry in
@@ -99,7 +98,7 @@ struct AppSwitcher: View {
                                         let delta = cardGeometry.frame(in: .named("switcherScroll")).midX - size.width / 2
                                         let distance = abs(delta)
                                         let spread = min(1, distance / (card.width * 0.32)) * card.width * 0.22
-                                        Color.clear.preference(key: SwitcherCenters.self, value: [slot: distance])
+                                        Color.clear.allowsHitTesting(false)
                                         SwitcherCard(slot: slot, preview: recent.previews[slot], wallpaper: wallpaper,
                                                  size: card, resume: { resume(slot, $0) },
                                                  terminate: { terminate(slot) })
@@ -107,26 +106,24 @@ struct AppSwitcher: View {
                                             .offset(x: delta < 0 ? -spread : spread)
                                     }.frame(width: card.width, height: card.height + 38)
                                         .id(slot)
-                                        .zIndex(centeredSlot == slot ? 1000 : Double(recent.slots.count - (recent.slots.firstIndex(of: slot) ?? 0)))
+                                        .zIndex(Double(recent.slots.count - (recent.slots.firstIndex(of: slot) ?? 0)))
                                         .onAppear { recent.loadPreview(slot) }
                                 }
                             }
                             .switcherTargets()
                             .padding(.horizontal, (size.width - card.width) / 2)
                             .padding(.top, 18).padding(.bottom, 26)
+                            .background { Color.clear.contentShape(Rectangle()).onTapGesture(perform: home) }
                         }
                         .switcherPaging(stride: card.width * 0.50)
                         .coordinateSpace(name: "switcherScroll")
-                        .onPreferenceChange(SwitcherCenters.self) { centers in
-                            if let nearest = centers.min(by: { $0.value < $1.value })?.key, nearest != centeredSlot {
-                                centeredSlot = nearest
-                            }
-                        }
                         .frame(height: card.height + 86)
+                        .background { Color.clear.contentShape(Rectangle()).onTapGesture(perform: home) }
                         .onAppear {
                             if let slot = active ?? recent.slots.first {
-                                centeredSlot = slot
-                                proxy.scrollTo(slot, anchor: .center)
+                                var transaction = Transaction(animation: nil)
+                                transaction.disablesAnimations = true
+                                withTransaction(transaction) { proxy.scrollTo(slot, anchor: .center) }
                             }
                         }
                     }
@@ -143,6 +140,8 @@ struct AppSwitcher: View {
                         .padding(.top, 10)
                 }.padding(.bottom, max(38, size.height * 0.06))
             }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: home)
             .foregroundStyle(.white)
             .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.88), value: recent.slots)
         }.ignoresSafeArea()
@@ -165,7 +164,7 @@ private struct SwitcherCard: View {
                 SlotIcon(slot: slot).frame(width: 28, height: 28)
                 Text(slot == 1 ? "PC File Bridge" : "\(slot)")
                     .font(.system(size: 16, weight: .semibold)).lineLimit(1)
-            }.padding(.horizontal, 6)
+            }.padding(.horizontal, 6).allowsHitTesting(false)
             GeometryReader { geometry in
                 ZStack {
                     if let preview {
@@ -230,12 +229,5 @@ private struct GentleCardSnap: ScrollTargetBehavior {
         // Preserve the system's inertial projection, with only a gentle card bias.
         let strength: CGFloat = abs(context.velocity.dx) < 120 ? 0.65 : 0.16
         target.rect.origin.x = projected + (nearest - projected) * strength
-    }
-}
-
-private struct SwitcherCenters: PreferenceKey {
-    static var defaultValue: [Int: CGFloat] { [:] }
-    static func reduce(value: inout [Int: CGFloat], nextValue: () -> [Int: CGFloat]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
