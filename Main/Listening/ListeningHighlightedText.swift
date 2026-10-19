@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Word positions are measured against the bundled Google narration, in audio seconds.
+/// Word positions are measured against the bundled textbook narration, in audio seconds.
 /// Using AVAudioPlayer.currentTime keeps highlighting aligned when seeking or changing speed.
 struct ListeningHighlightedText: UIViewRepresentable {
     let text: String

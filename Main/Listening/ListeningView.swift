@@ -278,7 +278,7 @@ struct ListeningView: View {
                             .frame(height: 400)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                     }
-                    Text("Google翻訳の英語音声を収録。初回からオフライン・画面ロック中も再生できます。").font(.footnote).foregroundStyle(.secondary)
+                    Text("教科書の教材音声を収録。初回からオフライン・画面ロック中も再生できます。").font(.footnote).foregroundStyle(.secondary)
                 }.padding(22)
             }.navigationTitle("写真リスニング").navigationBarTitleDisplayMode(.inline).tint(.indigo)
             .toolbar { ToolbarItem(placement: .navigationBarLeading) { Button(action: onHome) { Label("ホーム", systemImage: "chevron.left") }.accessibilityLabel("ホームへ戻る") } }
