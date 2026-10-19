@@ -51,7 +51,7 @@ enum HapticMediaBuilder {
             }
             let duration = try await asset.load(.duration).seconds
             guard duration.isFinite, duration > 0 else { throw HapticMediaError.message("動画の長さを取得できません。") }
-            progress("AHAPpyで振動に変換中…")
+            progress("音声を解析して振動に変換中…")
             let segments = try await HapticAnalysis.analyze(asset, directory: directory, duration: duration, progress: progress)
             try Task.checkCancellation()
             return HapticMedia(directory: directory, asset: asset, duration: duration, segments: segments)

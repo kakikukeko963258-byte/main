@@ -7,8 +7,8 @@
 ## 実装
 
 - YouTubeKit e5b7d0396ce12bf3444f0d209e8436c83373b7afを固定。ローカル抽出のみ使用。公開の通常動画・Shorts・短縮リンクを受け付ける。待ち時間を短縮するため、映像と音声の両方を含むMP4から240p以下の最小解像度を優先し、未提供の場合も取得可能な最小解像度を選ぶ。映像／音声別ストリームの場合は映像の最小解像度とM4A音声の最低ビットレートを使い、AVMutableCompositionで結合する。
-- AHAPpy a0f3727c91ff947abc1e56f029c5acd65adea304のSwift版RMS解析・振動イベント生成コードを同梱。MITライセンスを同梱。独立した音声／振動エンジンを起動しないよう、変換関数だけを公開する形に適応。
-- AVAssetReaderで22.05kHz mono Float32へ復号し、20秒ずつ解析する。長尺PCM全体をメモリに保持しない。20秒ごとにAHAPpyの音量正規化が行われる。
+- 外部変換ライブラリを使わず、main独自の音声解析でCore Hapticsのパターンを直接生成。音声を50ms窓に分け、RMS音量とピークから強さ、ゼロ交差率から鋭さを計算する。音量の立ち上がりには短いTransient、持続音にはContinuousイベントを出力。無音や小さな背景ノイズは除外する。
+- AVAssetReaderで22.05kHz mono Float32へ復号し、20秒ずつ解析する。長尺PCM全体をメモリに保持しない。各チャンクの95パーセンタイルRMSを音量基準とし、音量変化の大きい音でも振動を保つ。
 - AVPlayerを唯一の音声・動画プレーヤーとして使用。50msごとに実再生位置を確認し、該当CHHapticAdvancedPatternPlayerへシーク。待機／停止時は振動を停止、ずれが120ms超なら再同期。20秒境界では最大約50msの切り替え遅延があり得る。実機での体感遅延は未検証。
 - ホームへ戻る／画面を閉じるとキャンセル・プレーヤー解放・一時ファイル削除。バックグラウンド移行と音声割込みで再生停止。
 
@@ -18,6 +18,6 @@ YouTubeの全リンク取得は保証できない。YouTubeの変更、地域・
 
 ## 検証
 
-macOS Actionsでリンク入力検証、41秒の合成音声による無音・20秒境界・末尾保持・AHAPpy変換を検証する。iPhone用XcodeビルドとIPAを生成し、Simulatorで入力画面／不正リンクのエラー表示を確認。実際のYouTube取得と振動の体感同期は実機・地域・YouTube側の応答に依存するため別途確認が必要。
+macOS Actionsでリンク入力、41秒の合成音声による無音ゲート・波形強度イベント・立ち上がりTransient・20秒境界・末尾保持を確認する。iPhone用XcodeビルドとIPAを生成し、Simulatorで入力画面／不正リンクのエラー表示を確認。実際のYouTube取得と振動の体感同期は実機・地域・YouTube側の応答に依存するため別途確認が必要。
 
-出典: https://github.com/samroman3/AHAPpy / https://github.com/alexeichhorn/YouTubeKit
+動画取得: https://github.com/alexeichhorn/YouTubeKit

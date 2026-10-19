@@ -31,9 +31,11 @@ struct HapticChecks {
         let segments = try await HapticAnalysis.analyze(asset, directory: directory, duration: 41, progress: { _ in })
         precondition(segments.count == 3, "Long media must not be truncated")
         precondition(segments.map(\.start) == [0, 20, 40])
-        precondition(segments[0].pattern.duration == 0, "Silence must not produce vibration")
+        precondition(segments[0].eventCount == 0 && segments[0].pattern.duration == 0, "Silence must not produce vibration")
         precondition(segments[1].pattern.duration > 19)
+        precondition(segments[1].eventCount > 0, "Sound must produce haptic events")
+        precondition(segments[1].transientCount > 0, "Sound onset must produce a transient")
         precondition(segments[2].pattern.duration > 0.8, "Final partial segment must be retained")
-        print("PASS: YouTube URL validation, silent audio, 20-second boundaries, final chunk, AHAPpy conversion")
+        print("PASS: YouTube URL validation, silent gating, waveform intensity events, onset transients, 20-second boundaries, final chunk")
     }
 }

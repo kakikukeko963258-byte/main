@@ -224,7 +224,7 @@ struct YouTubeHapticsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     Text("動画を、振動でも楽しむ").font(.title2.bold())
-                    Text("リンクを入力 → 取得 → AHAPpyで変換 → 同期再生").font(.subheadline).foregroundStyle(.secondary)
+                    Text("リンクを入力 → 取得 → 音声から振動を生成 → 同期再生").font(.subheadline).foregroundStyle(.secondary)
                     TextField("https://www.youtube.com/watch?v=…", text: $model.link)
                         .textFieldStyle(.roundedBorder).keyboardType(.URL).textInputAutocapitalization(.never)
                         .autocorrectionDisabled().accessibilityIdentifier("haptics-link")
@@ -265,7 +265,7 @@ struct YouTubeHapticsView: View {
                     if !model.supportsHaptics { Text("この端末ではCore Hapticsの振動を利用できません。").foregroundStyle(.orange) }
                     Text("公開動画のリンクを指定してください。ライブ配信・非公開・年齢制限など、取得できない動画があります。変換データはこの画面を閉じると削除されます。映像・音声は各1GBまで。画面を閉じる／バックグラウンドへ移ると再生を停止します。")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Text("音声解析: AHAPpy · 動画取得: YouTubeKit").font(.caption).foregroundStyle(.secondary)
+                    Text("音声解析: 独自変換 · 動画取得: YouTubeKit").font(.caption).foregroundStyle(.secondary)
                 }.padding()
             }
             .navigationTitle("YouTube × 振動")

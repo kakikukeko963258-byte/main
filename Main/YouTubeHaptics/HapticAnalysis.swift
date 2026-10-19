@@ -6,6 +6,8 @@ struct HapticMedia {
     struct Segment {
         let start: Double
         let pattern: CHHapticPattern
+        let eventCount: Int
+        let transientCount: Int
     }
     let directory: URL
     let asset: AVAsset
@@ -22,7 +24,8 @@ enum HapticMediaError: LocalizedError {
 
 enum HapticAnalysis {
     // Decode to bounded 20-second mono PCM chunks, retaining only haptic events.
-    // AHAPpy's original algorithm reads one entire file, so never pass a long movie to it.
+    // Keeping conversion in bounded chunks prevents long movies from allocating an
+    // audio-sized buffer while preserving a continuous playback timeline.
     static func analyze(_ asset: AVAsset, directory: URL, duration: Double,
                         progress: @escaping @Sendable (String) -> Void) async throws -> [HapticMedia.Segment] {
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
@@ -50,11 +53,12 @@ enum HapticAnalysis {
                 let file = try AVAudioFile(forWriting: chunkURL, settings: format.settings)
                 try file.write(from: buffer)
             }
-            let pattern = try AHAPpyConverter.generateHapticPattern(for: chunkURL, options: .musicDefaults)
-            result.append(.init(start: start, pattern: pattern))
+            let conversion = try HapticConverter.convert(audioURL: chunkURL)
+            result.append(.init(start: start, pattern: conversion.pattern,
+                                eventCount: conversion.eventCount, transientCount: conversion.transientCount))
             start += Double(filled) / 22050
             filled = 0
-            progress("AHAPpyで振動に変換中… \(Int(min(100, start / duration * 100)))%")
+            progress("音声を解析して振動に変換中… \(Int(min(100, start / duration * 100)))%")
         }
         while let sample = output.copyNextSampleBuffer() {
             try Task.checkCancellation()
