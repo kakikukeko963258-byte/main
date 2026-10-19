@@ -1,0 +1,50 @@
+[
+  {
+    "photo": 1,
+    "lesson": "Lesson 6 OVERVIEW",
+    "page": "https://cds.chart.co.jp/books/utanbzy9t6/lessons/141",
+    "audio": "https://cds.chart.co.jp/assets/contents/books/utanbzy9t6/content/106-195_300_text.mp3",
+    "script": "https://cds.chart.co.jp/assets/contents/books/utanbzy9t6/content/106-195_300_text.json",
+    "sha256": "d420e640c15e2b74a952f2765f878aaeda41e91d9e8d704039e9377097ea9abb",
+    "chapterStarts": [
+      0,
+      74.96,
+      147.9,
+      221.57
+    ],
+    "durationSeconds": 307.80125,
+    "wordAlignment": "Wav2Vec2 CTC Viterbi; publisher paragraph anchors"
+  },
+  {
+    "photo": 2,
+    "lesson": "Lesson 7 OVERVIEW",
+    "page": "https://cds.chart.co.jp/books/utanbzy9t6/lessons/171",
+    "audio": "https://cds.chart.co.jp/assets/contents/books/utanbzy9t6/content/106-195_360_text.mp3",
+    "script": "https://cds.chart.co.jp/assets/contents/books/utanbzy9t6/content/106-195_360_text.json",
+    "sha256": "97ac2398a351a0b38c6c3bdf6d33f68621a8da6bbbbff04b723dd43ee158c737",
+    "chapterStarts": [
+      0,
+      74.92,
+      142.14,
+      216.07
+    ],
+    "durationSeconds": 296.536875,
+    "wordAlignment": "Wav2Vec2 CTC Viterbi; publisher paragraph anchors"
+  },
+  {
+    "photo": 3,
+    "lesson": "Lesson 8 OVERVIEW",
+    "page": "https://cds.chart.co.jp/books/utanbzy9t6/lessons/201",
+    "audio": "https://cds.chart.co.jp/assets/contents/books/utanbzy9t6/content/106-195_420_text.mp3",
+    "script": "https://cds.chart.co.jp/assets/contents/books/utanbzy9t6/content/106-195_420_text.json",
+    "sha256": "3b7c4f8c0f7c3a67bdf6e224805a53515214c6af90a9f21b1c254d28a1f4527b",
+    "chapterStarts": [
+      0,
+      68.46,
+      151.67,
+      230.17
+    ],
+    "durationSeconds": 311.2136875,
+    "wordAlignment": "Wav2Vec2 CTC Viterbi; publisher paragraph anchors"
+  }
+]

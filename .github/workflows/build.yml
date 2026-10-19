@@ -12,6 +12,10 @@ on:
         description: Run the focused chapter playback and word highlighting UI test
         type: boolean
         default: false
+      skip_all_checks:
+        description: Skip tests and checks when explicitly requested
+        type: boolean
+        default: false
 permissions:
   contents: write
 concurrency:
@@ -21,9 +25,10 @@ jobs:
   build:
     runs-on: macos-26
     env:
-      RUN_UI_CHECKS: ${{ !contains(github.event.head_commit.message, '[skip ui]') && !inputs.skip_ui_checks }}
+      RUN_CHECKS: ${{ !contains(github.event.head_commit.message, '[skip tests]') && !inputs.skip_all_checks }}
+      RUN_UI_CHECKS: ${{ !contains(github.event.head_commit.message, '[skip tests]') && !contains(github.event.head_commit.message, '[skip ui]') && !inputs.skip_ui_checks && !inputs.skip_all_checks }}
       ONLY_HAPTICS: ${{ contains(github.event.head_commit.message, '[haptics]') }}
-      ONLY_LISTENING: ${{ inputs.only_listening || false }}
+      ONLY_LISTENING: ${{ inputs.only_listening || contains(github.event.head_commit.message, '[listening]') }}
       ONLY_CHARGING: ${{ contains(github.event.head_commit.message, '[charging]') }}
     steps:
       - uses: actions/checkout@v4
@@ -31,15 +36,21 @@ jobs:
         run: brew install xcodegen
       - name: Generate project
         run: xcodegen generate
+      - name: Verify textbook audio and word timings
+        if: env.RUN_CHECKS == 'true'
+        run: python3 scripts/check-listening-assets.py
       - name: Verify charge prediction
+        if: env.RUN_CHECKS == 'true'
         run: |
           swiftc Main/Charging/ChargeEstimator.swift Main/Charging/ChargingHistory.swift scripts/ChargeEstimatorChecks.swift -o /tmp/charge-checks
           /tmp/charge-checks
       - name: Verify YouTube links and waveform haptic conversion
+        if: env.RUN_CHECKS == 'true'
         run: |
           swiftc -parse-as-library Main/YouTubeHaptics/YouTubeLink.swift Main/YouTubeHaptics/HapticConverter.swift Main/YouTubeHaptics/HapticAnalysis.swift scripts/HapticChecks.swift -o /tmp/haptic-checks
           /tmp/haptic-checks
       - name: Probe public YouTube extraction (runner network)
+        if: env.RUN_CHECKS == 'true'
         continue-on-error: true
         timeout-minutes: 4
         run: swift run --package-path scripts/YouTubeProbe

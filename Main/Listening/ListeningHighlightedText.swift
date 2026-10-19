@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Word positions are measured against the bundled Google narration, in audio seconds.
+/// Word positions are measured against the bundled textbook narration, in audio seconds.
 /// Using AVAudioPlayer.currentTime keeps highlighting aligned when seeking or changing speed.
 struct ListeningHighlightedText: UIViewRepresentable {
     let text: String
@@ -28,6 +28,7 @@ struct ListeningHighlightedText: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.words = words
         coordinator.seek = seek
+        let readingHeight = max(0, view.bounds.height - view.adjustedContentInset.top - view.adjustedContentInset.bottom)
         if coordinator.identity != identity || view.text != text {
             coordinator.identity = identity
             coordinator.range = nil
@@ -57,7 +58,27 @@ struct ListeningHighlightedText: UIViewRepresentable {
                                            .foregroundColor: UIColor.black], range: next)
             // Don't pull the page away while the reader is deliberately scrolling.
             if !view.isDragging && !view.isDecelerating {
-                view.scrollRangeToVisible(next)
+                view.layoutIfNeeded()
+                view.layoutManager.ensureLayout(for: view.textContainer)
+                let glyphs = view.layoutManager.glyphRange(forCharacterRange: next, actualCharacterRange: nil)
+                guard glyphs.length > 0, readingHeight > 0 else { return }
+                let line = view.layoutManager.lineFragmentUsedRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+                let lineMiddle = line.midY + view.textContainerInset.top
+                let visibleTop = view.contentOffset.y + view.adjustedContentInset.top
+                let midpoint = visibleTop + readingHeight / 2
+                let visibleBottom = visibleTop + readingHeight
+                // Follow only while the spoken line is already in this viewport.
+                // Scrolling elsewhere to read must never pull the reader back.
+                // The normal bottom inset lets the final lines stop at the bottom.
+                if lineMiddle > midpoint + 1 && lineMiddle < visibleBottom {
+                    let minimum = -view.adjustedContentInset.top
+                    let maximum = max(minimum, view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom)
+                    let target = min(maximum, max(minimum, lineMiddle - readingHeight / 2 - view.adjustedContentInset.top))
+                    if abs(target - view.contentOffset.y) > 1 {
+                        view.setContentOffset(CGPoint(x: view.contentOffset.x, y: target),
+                                              animated: !UIAccessibility.isReduceMotionEnabled)
+                    }
+                }
             }
         }
     }
