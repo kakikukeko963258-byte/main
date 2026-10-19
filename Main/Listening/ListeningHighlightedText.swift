@@ -28,6 +28,14 @@ struct ListeningHighlightedText: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.words = words
         coordinator.seek = seek
+        // Leave enough space after the final line to keep it at the midpoint too.
+        let readingHeight = max(0, view.bounds.height - view.adjustedContentInset.top - view.adjustedContentInset.bottom)
+        let bottomSpace = max(30, readingHeight / 2)
+        if abs(view.textContainerInset.bottom - bottomSpace) > 1 {
+            var insets = view.textContainerInset
+            insets.bottom = bottomSpace
+            view.textContainerInset = insets
+        }
         if coordinator.identity != identity || view.text != text {
             coordinator.identity = identity
             coordinator.range = nil
@@ -57,7 +65,25 @@ struct ListeningHighlightedText: UIViewRepresentable {
                                            .foregroundColor: UIColor.black], range: next)
             // Don't pull the page away while the reader is deliberately scrolling.
             if !view.isDragging && !view.isDecelerating {
-                view.scrollRangeToVisible(next)
+                view.layoutIfNeeded()
+                view.layoutManager.ensureLayout(for: view.textContainer)
+                let glyphs = view.layoutManager.glyphRange(forCharacterRange: next, actualCharacterRange: nil)
+                guard glyphs.length > 0, readingHeight > 0 else { return }
+                let line = view.layoutManager.lineFragmentUsedRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+                let lineMiddle = line.midY + view.textContainerInset.top
+                let visibleTop = view.contentOffset.y + view.adjustedContentInset.top
+                let midpoint = visibleTop + readingHeight / 2
+                // Text in the upper half stays still. Once a line reaches the
+                // lower half, follow it at the center, including the last line.
+                if lineMiddle > midpoint + 1 || lineMiddle < visibleTop {
+                    let minimum = -view.adjustedContentInset.top
+                    let maximum = max(minimum, view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom)
+                    let target = min(maximum, max(minimum, lineMiddle - readingHeight / 2 - view.adjustedContentInset.top))
+                    if abs(target - view.contentOffset.y) > 1 {
+                        view.setContentOffset(CGPoint(x: view.contentOffset.x, y: target),
+                                              animated: !UIAccessibility.isReduceMotionEnabled)
+                    }
+                }
             }
         }
     }
