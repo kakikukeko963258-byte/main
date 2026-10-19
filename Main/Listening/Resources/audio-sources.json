@@ -12,7 +12,8 @@
       147.9,
       221.57
     ],
-    "durationSeconds": 307.80125
+    "durationSeconds": 307.80125,
+    "wordAlignment": "Wav2Vec2 CTC Viterbi; publisher paragraph anchors"
   },
   {
     "photo": 2,
@@ -27,7 +28,8 @@
       142.14,
       216.07
     ],
-    "durationSeconds": 296.536875
+    "durationSeconds": 296.536875,
+    "wordAlignment": "Wav2Vec2 CTC Viterbi; publisher paragraph anchors"
   },
   {
     "photo": 3,
@@ -42,6 +44,7 @@
       151.67,
       230.17
     ],
-    "durationSeconds": 311.2136875
+    "durationSeconds": 311.2136875,
+    "wordAlignment": "Wav2Vec2 CTC Viterbi; publisher paragraph anchors"
   }
 ]

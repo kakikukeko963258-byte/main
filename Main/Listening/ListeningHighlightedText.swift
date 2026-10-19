@@ -28,14 +28,7 @@ struct ListeningHighlightedText: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.words = words
         coordinator.seek = seek
-        // Leave enough space after the final line to keep it at the midpoint too.
         let readingHeight = max(0, view.bounds.height - view.adjustedContentInset.top - view.adjustedContentInset.bottom)
-        let bottomSpace = max(30, readingHeight / 2)
-        if abs(view.textContainerInset.bottom - bottomSpace) > 1 {
-            var insets = view.textContainerInset
-            insets.bottom = bottomSpace
-            view.textContainerInset = insets
-        }
         if coordinator.identity != identity || view.text != text {
             coordinator.identity = identity
             coordinator.range = nil
@@ -73,9 +66,11 @@ struct ListeningHighlightedText: UIViewRepresentable {
                 let lineMiddle = line.midY + view.textContainerInset.top
                 let visibleTop = view.contentOffset.y + view.adjustedContentInset.top
                 let midpoint = visibleTop + readingHeight / 2
-                // Text in the upper half stays still. Once a line reaches the
-                // lower half, follow it at the center, including the last line.
-                if lineMiddle > midpoint + 1 || lineMiddle < visibleTop {
+                let visibleBottom = visibleTop + readingHeight
+                // Follow only while the spoken line is already in this viewport.
+                // Scrolling elsewhere to read must never pull the reader back.
+                // The normal bottom inset lets the final lines stop at the bottom.
+                if lineMiddle > midpoint + 1 && lineMiddle < visibleBottom {
                     let minimum = -view.adjustedContentInset.top
                     let maximum = max(minimum, view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom)
                     let target = min(maximum, max(minimum, lineMiddle - readingHeight / 2 - view.adjustedContentInset.top))
