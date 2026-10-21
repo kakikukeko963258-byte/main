@@ -24,11 +24,16 @@ final class HomeUITests: XCTestCase {
         pattern.tap()
         XCTAssertTrue(app.staticTexts["rail-type"].label.contains("手動"))
         app.swipeUp()
-        let station = app.buttons["rail-station-0"]
+        // The first row can sit underneath the floating navigation bar after this swipe.
+        // Use the fully visible second stop, rather than tapping through the toolbar.
+        let station = app.buttons["rail-station-1"]
         XCTAssertTrue(station.waitForExistence(timeout: 5))
+        XCTAssertTrue(station.isHittable)
         capture("rail-stops-and-transfers")
         station.tap()
+        XCTAssertTrue(app.navigationBars["中目黒"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["乗り換えできる路線"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["日比谷線"].exists)
         capture("rail-station-transfers")
     }
 
