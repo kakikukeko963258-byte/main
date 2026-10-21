@@ -48,6 +48,17 @@ struct RailRideView: View {
                         Button("自動推定に戻す") { store.chooseLine(nil) }
                     }
                 }
+                if !store.nextStops.isEmpty {
+                    Section("次の停車駅候補（推定）") {
+                        ForEach(store.nextStops) { station in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(station.name).font(.title3.bold())
+                                let transfers = store.detector?.transfers(at: station.id, excluding: store.line?.id ?? "") ?? []
+                                if !transfers.isEmpty { Text(transfers.map(\.name).joined(separator: "・")).font(.caption).foregroundStyle(.secondary) }
+                            }
+                        }
+                    }
+                }
                 if !store.candidates.isEmpty {
                     Section("近くの路線候補（乗車は未確定）") {
                         ForEach(store.candidates.prefix(8)) { candidate in

@@ -129,14 +129,15 @@ final class RailDetector {
         for station in catalog.stations {
             let d = RailGeometry.distance(fix.lat, fix.lon, station.lat, station.lon)
             if d <= 110 {
-                var visit = visits[station.id] ?? (fix.time, fix.time, nil, false, false)
-                if fix.time.timeIntervalSince(visit.last) > 15 { visit = (fix.time, fix.time, nil, false, false) }
+                var visit = visits[station.id] ?? (fix.time, fix.time, nil, false, true)
+                if fix.time.timeIntervalSince(visit.last) > 15 { visit = (fix.time, fix.time, nil, false, true) }
                 visit.last = fix.time
                 if fix.speed >= 0 && fix.speed < 1.5 {
                     if visit.slow == nil { visit.slow = fix.time }
                     if fix.time.timeIntervalSince(visit.slow!) >= 15 { visit.stopped = true }
                 } else { visit.slow = nil }
-                if fix.speed >= 8 { visit.fast = true }
+                // A short real stop must remain unknown rather than become a false pass.
+                visit.fast = visit.fast && fix.speed >= 8
                 visits[station.id] = visit
                 if visit.stopped { record(station.id, stopped: true, at: fix.time) }
             } else if let visit = visits[station.id] {

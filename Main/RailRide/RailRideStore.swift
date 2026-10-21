@@ -109,8 +109,32 @@ final class RailRideStore: NSObject, ObservableObject, CLLocationManagerDelegate
         if let activePattern { return activePattern.type + "（手動）" }
         let types = Set(patterns.map(\.type))
         let observations = detector?.evidence.filter { detector?.stations[$0.station]?.line == line?.id } ?? []
-        if observations.count >= 2 && direction != 0 && types.count == 1 { return types.first! + " の可能性" }
+        if Set(observations.map(\.station)).count >= 2 && direction != 0 && types.count == 1 { return types.first! + " の可能性" }
         return "種別を判別中"
+    }
+    var nextStops: [RailStation] {
+        guard let line, let progress, let detector else { return [] }
+        let pool = activePattern.map { [$0] } ?? patterns
+        let loop = line.stations.first == line.stations.last
+        let length = Double(line.stations.count - 1)
+        var next = Set<String>()
+        for pattern in pool {
+            guard let first = line.stations.firstIndex(of: pattern.stops[0]),
+                  let second = line.stations.firstIndex(of: pattern.stops[1]) else { continue }
+            var step = second - first
+            if loop && step > line.stations.count / 2 { step -= line.stations.count - 1 }
+            if loop && step < -line.stations.count / 2 { step += line.stations.count - 1 }
+            let sign = step > 0 ? 1.0 : -1.0
+            if activePattern == nil && direction == 0 { continue }
+            let ahead = pattern.stops.compactMap { id -> (String, Double)? in
+                guard let index = line.stations.firstIndex(of: id) else { return nil }
+                var distance = (Double(index) - progress) * sign
+                if loop && distance < -0.2 { distance += length }
+                return distance > 0.2 ? (id, distance) : nil
+            }.min { $0.1 < $1.1 }
+            if let ahead { next.insert(ahead.0) }
+        }
+        return next.compactMap { detector.stations[$0] }.sorted { $0.name < $1.name }
     }
     var displayedStations: [RailStation] {
         guard let line, let detector else { return [] }
