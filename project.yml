@@ -37,6 +37,7 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSLocalNetworkUsageDescription: Windows PCを検出し、選択した共有フォルダーへ接続します。
         NSCameraUsageDescription: PC画面のQRコードを読み取り、接続設定を登録します。
+        NSLocationWhenInUseUsageDescription: 乗車中の路線・列車種別と停車駅を推定するため、移動と停車・通過を端末内で照合します。
         NSBonjourServices: [_pcfilebridge._tcp]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

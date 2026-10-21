@@ -2,6 +2,37 @@ import XCTest
 
 final class HomeUITests: XCTestCase {
     @MainActor
+    func testRailNavigation() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-rail-direct-ui-test"]
+        app.launch()
+        XCTAssertTrue(app.buttons["rail-start"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["rail-line"].exists)
+        capture("rail-initial")
+        app.buttons["rail-choose-line"].tap()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("Tokyu.Toyoko")
+        let line = app.buttons["rail-line-Tokyu.Toyoko"]
+        XCTAssertTrue(line.waitForExistence(timeout: 5))
+        line.tap()
+        XCTAssertTrue(app.staticTexts["東横線"].waitForExistence(timeout: 5))
+        app.buttons["rail-choose-pattern"].tap()
+        let pattern = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "rail-pattern-")).firstMatch
+        XCTAssertTrue(pattern.waitForExistence(timeout: 5))
+        pattern.tap()
+        XCTAssertTrue(app.staticTexts["rail-type"].label.contains("手動"))
+        app.swipeUp()
+        let station = app.buttons["rail-station-0"]
+        XCTAssertTrue(station.waitForExistence(timeout: 5))
+        capture("rail-stops-and-transfers")
+        station.tap()
+        XCTAssertTrue(app.staticTexts["乗り換えできる路線"].waitForExistence(timeout: 5))
+        capture("rail-station-transfers")
+    }
+
+    @MainActor
     func testYouTubeHapticsInput() {
         let app = XCUIApplication()
         app.launchArguments = ["-haptics-direct-ui-test"]

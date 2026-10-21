@@ -30,6 +30,7 @@ jobs:
       ONLY_HAPTICS: ${{ contains(github.event.head_commit.message, '[haptics]') }}
       ONLY_LISTENING: ${{ inputs.only_listening || contains(github.event.head_commit.message, '[listening]') }}
       ONLY_CHARGING: ${{ contains(github.event.head_commit.message, '[charging]') }}
+      ONLY_RAIL: ${{ contains(github.event.head_commit.message, '[rail]') }}
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
@@ -54,6 +55,11 @@ jobs:
         continue-on-error: true
         timeout-minutes: 4
         run: swift run --package-path scripts/YouTubeProbe
+      - name: Verify railway inference and bundled Kanto coverage
+        if: env.RUN_CHECKS == 'true'
+        run: |
+          swiftc -parse-as-library Main/RailRide/RailModel.swift scripts/RailChecks.swift -o /tmp/rail-checks
+          /tmp/rail-checks Main/RailRide/Resources/kanto-rail.json
       - name: Build iPhone app
         run: |
           set -euo pipefail
@@ -101,6 +107,9 @@ jobs:
           fi
           if [ "$ONLY_HAPTICS" = "true" ]; then
             TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testYouTubeHapticsInput)
+          fi
+          if [ "$ONLY_RAIL" = "true" ]; then
+            TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testRailNavigation)
           fi
           xcodebuild test -project main.xcodeproj -scheme main -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 -derivedDataPath simulator-build -resultBundlePath TestResults.xcresult "${TEST_FILTER[@]}" CODE_SIGNING_ALLOWED=NO
           kill -INT "$RECORD_PID" 2>/dev/null || true
