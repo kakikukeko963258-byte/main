@@ -6,6 +6,8 @@ struct PCFileBridgeView: View {
     @State private var showSetupImporter = false
     @State private var showQRScanner = false
     @State private var showManualPairing = false
+    @State private var pendingRemoval: SavedServer?
+    @State private var showRemovalConfirmation = false
     @StateObject private var model = BridgeViewModel()
     @StateObject private var discovery = PCDiscovery()
     @StateObject private var changeMonitor = ChangeMonitor()
@@ -57,25 +59,33 @@ struct PCFileBridgeView: View {
                 Section("保存済みのPC") {
                     if model.servers.isEmpty { Text("ペアリングしたPCはありません。").foregroundStyle(.secondary) }
                     ForEach(model.servers) { server in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(server.name).font(.headline)
-                            Text(server.baseURL).font(.caption).foregroundStyle(.secondary)
-                            let status = model.connectionStates[server.id] ?? .checking
-                            Label(status.title, systemImage: status.symbol).font(.caption)
-                                .foregroundStyle(status == .connected ? Color.green : Color.secondary)
+                        Group {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(server.name).font(.headline)
+                                Text(server.baseURL).font(.caption).foregroundStyle(.secondary)
+                                let status = model.connectionStates[server.id] ?? .checking
+                                Label(status.title, systemImage: status.symbol).font(.caption)
+                                    .foregroundStyle(status == .connected ? Color.green : Color.secondary)
+                            }.padding(.vertical, 4)
                             NavigationLink("ファイルを閲覧") {
                                 RemoteFolderView(server: server, parentId: "root", title: server.name)
                             }
+                            Button("接続テスト") { Task { await model.test(server) } }
+                                .buttonStyle(.borderless)
+                                .disabled(model.isWorking)
                             if let registrationError = model.filesRegistrationErrors[server.id] {
                                 Text(registrationError).font(.caption).foregroundStyle(.red)
                                 Button("Filesへの登録を再試行") { Task { await model.registerInFiles(server) } }
+                                    .buttonStyle(.borderless)
+                                    .disabled(model.isWorking)
                             }
-                            HStack {
-                                Button("接続テスト") { Task { await model.test(server) } }
-                                Spacer()
-                                Button("Filesから削除", role: .destructive) { Task { await model.remove(server) } }
-                            }.font(.subheadline)
-                        }.padding(.vertical, 4)
+                            Button("PCの登録を解除", role: .destructive) {
+                                pendingRemoval = server
+                                showRemovalConfirmation = true
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(model.isWorking)
+                        }
                     }
                 }
 
@@ -130,6 +140,13 @@ struct PCFileBridgeView: View {
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { showQRScanner = false } } }
                 }
+            }
+            .confirmationDialog("このPCの登録を解除しますか？", isPresented: $showRemovalConfirmation, titleVisibility: .visible, presenting: pendingRemoval) { server in
+                Button("登録を解除", role: .destructive) {
+                    pendingRemoval = nil
+                    Task { await model.remove(server) }
+                }
+                Button("キャンセル", role: .cancel) { pendingRemoval = nil }
             }
             .onChange(of: model.servers) { servers in
                 if scenePhase == .active { changeMonitor.start(servers: servers) }
