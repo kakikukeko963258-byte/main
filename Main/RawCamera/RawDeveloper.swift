@@ -63,8 +63,10 @@ enum RawDeveloper {
             kCIInputContrastKey: a.contrast])
         if a.grain > 0 {
             // A repeatable texture keeps the grain stable while editing and exporting.
-            let noise = CIImage(cgImage: grainTile)
-                .applyingFilter("CIAffineTile", parameters: [kCIInputTransformKey: NSValue(cgAffineTransform: .identity)])
+            let tile = CIFilter.affineTile()
+            tile.inputImage = CIImage(cgImage: grainTile)
+            tile.transform = .identity
+            let noise = tile.outputImage!
                 .cropped(to: image.extent)
                 .applyingFilter("CIColorMatrix", parameters: [
                     "inputAVector": CIVector(x: 0, y: 0, z: 0, w: a.grain * 0.3)])
