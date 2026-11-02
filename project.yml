@@ -110,7 +110,7 @@ targets:
   mainRawTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [TestsRaw, Main/RawCamera/RawPhotoLibrary.swift]
+    sources: [TestsRaw, Main/RawCamera/RawPhotoLibrary.swift, Main/RawCamera/RawDeveloper.swift]
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

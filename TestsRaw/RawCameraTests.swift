@@ -7,8 +7,8 @@ final class RawCameraTests: XCTestCase {
         var neutral = RawAdjustments()
         neutral.look = "Neutral"; neutral.grain = 0
         let first = try RawDeveloper.image(url, adjustments: neutral)
-        XCTAssertEqual(first.extent.width, 256)
-        XCTAssertEqual(first.extent.height, 192)
+        XCTAssertEqual(first.extent.width, 512)
+        XCTAssertEqual(first.extent.height, 384)
         let original = try RawDeveloper.jpeg(first)
         var changed = neutral; changed.exposure = 1.5; changed.look = "Cinema"; changed.grain = 0.4
         let developed = try RawDeveloper.jpeg(RawDeveloper.image(url, adjustments: changed))
