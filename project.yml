@@ -107,6 +107,14 @@ targets:
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
         SWIFT_VERSION: '5.0'
+  mainRawTests:
+    type: bundle.unit-testing
+    platform: iOS
+    sources: [TestsRaw, Main/RawCamera/RawPhotoLibrary.swift]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: '5.0'
   mainUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -124,4 +132,4 @@ schemes:
       targets:
         main: all
     test:
-      targets: [mainUITests]
+      targets: [mainUITests, mainRawTests]
