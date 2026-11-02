@@ -25,11 +25,11 @@ final class RawCapture: NSObject, ObservableObject, AVCapturePhotoCaptureDelegat
     @Published var exposureRange: ClosedRange<Float> = -2...2
     override init() {
         super.init()
-        observers.append(NotificationCenter.default.addObserver(forName: .AVCaptureSessionWasInterrupted, object: session, queue: .main) { [weak self] _ in
+        observers.append(NotificationCenter.default.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: session, queue: .main) { [weak self] _ in
             self?.ready = false; self?.message = "カメラが一時停止しました。ほかのカメラ利用を終了して戻ってください。"
         })
-        observers.append(NotificationCenter.default.addObserver(forName: .AVCaptureSessionInterruptionEnded, object: session, queue: .main) { [weak self] _ in self?.resume() })
-        observers.append(NotificationCenter.default.addObserver(forName: .AVCaptureSessionRuntimeError, object: session, queue: .main) { [weak self] note in
+        observers.append(NotificationCenter.default.addObserver(forName: AVCaptureSession.interruptionEndedNotification, object: session, queue: .main) { [weak self] _ in self?.resume() })
+        observers.append(NotificationCenter.default.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: .main) { [weak self] note in
             self?.ready = false
             self?.message = (note.userInfo?[AVCaptureSessionErrorKey] as? Error)?.localizedDescription ?? "カメラエラーが発生しました。"
         })
@@ -92,7 +92,7 @@ final class RawCapture: NSObject, ObservableObject, AVCapturePhotoCaptureDelegat
         }
     }
     func stop() { queue.async { self.wanted = false; if self.session.isRunning { self.session.stopRunning() } } }
-    func resume() { queue.async { self.wanted = true }; configureAndStart() }
+    func resume() { queue.async { if self.wanted { self.configureAndStart() } } }
     func select(_ lens: AVCaptureDevice) {
         guard !capturing else { return }
         ready = false

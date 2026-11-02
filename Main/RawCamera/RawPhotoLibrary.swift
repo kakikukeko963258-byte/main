@@ -98,6 +98,7 @@ enum RawDeveloper {
 }
 
 final class RawPhotoLibrary: ObservableObject {
+    @Published private(set) var thumbnailRevision = 0
     @Published private(set) var shots: [RawShot] = []
     @Published var error: String?
     @Published var notice: String?
@@ -128,7 +129,7 @@ final class RawPhotoLibrary: ObservableObject {
                 do {
                     let image = try RawDeveloper.image(self.original(shot), adjustments: shot.adjustments, maxSide: 1200)
                     try RawDeveloper.jpeg(image).write(to: self.thumbnail(shot), options: .atomic)
-                    DispatchQueue.main.async { self.objectWillChange.send() }
+                    DispatchQueue.main.async { self.thumbnailRevision += 1 }
                 } catch { DispatchQueue.main.async { self.error = error.localizedDescription } }
                 DispatchQueue.main.async {
                     if UserDefaults.standard.bool(forKey: "raw-auto-export") { self.saveToPhotos(shot, raw: false) }
@@ -149,7 +150,7 @@ final class RawPhotoLibrary: ObservableObject {
                 }
                 let image = try RawDeveloper.image(self.original(updated), adjustments: adjustments, maxSide: 1200)
                 try RawDeveloper.jpeg(image).write(to: self.thumbnail(updated), options: .atomic)
-                DispatchQueue.main.async { self.objectWillChange.send(); self.busy = false }
+                DispatchQueue.main.async { self.thumbnailRevision += 1; self.busy = false }
             } catch { DispatchQueue.main.async { self.error = error.localizedDescription; self.busy = false } }
         }
     }

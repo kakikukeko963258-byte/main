@@ -63,7 +63,7 @@ struct RawCameraView: View {
             HStack(spacing: 12) {
                 Image(systemName: "sun.max")
                 Slider(value: $camera.exposure, in: camera.exposureRange).tint(amber)
-                    .onChange(of: camera.exposure) { camera.setExposure($0) }
+                    .onChange(of: camera.exposure) { _, value in camera.setExposure(value) }
                     .accessibilityLabel("露出補正")
                 Text(String(format: "%+.1f", camera.exposure)).monospacedDigit().frame(width: 42)
             }.font(.caption).padding(.horizontal, 36).padding(.top, 14).disabled(!camera.ready || camera.capturing)
@@ -88,7 +88,7 @@ struct RawCameraView: View {
         .background(.black).foregroundStyle(.white)
         .onAppear { startCamera() }
         .onDisappear { camera.stop() }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             if phase == .active && !gallery && !preferences { startCamera() } else { camera.stop() }
         }
         .sheet(isPresented: $gallery, onDismiss: { startCamera() }) {
@@ -105,8 +105,8 @@ struct RawCameraView: View {
                 }.navigationTitle("カメラ設定").toolbar { ToolbarItem(placement: .confirmationAction) { Button("完了") { preferences = false } } }
             }.preferredColorScheme(.dark)
         }
-        .onChange(of: gallery) { if $0 { camera.stop() } }
-        .onChange(of: preferences) { if $0 { camera.stop() } }
+        .onChange(of: gallery) { _, shown in if shown { camera.stop() } }
+        .onChange(of: preferences) { _, shown in if shown { camera.stop() } }
         .alert("RAWカメラ", isPresented: Binding(get: { !gallery && (library.error != nil || library.notice != nil) }, set: { if !$0 { library.error = nil; library.notice = nil } })) {
             Button("OK") { library.error = nil; library.notice = nil }
         } message: { Text(library.error ?? library.notice ?? "") }
@@ -131,7 +131,7 @@ struct RawGalleryView: View {
                             ForEach(library.shots) { shot in
                                 NavigationLink {
                                     RawEditorView(library: library, shot: shot)
-                                } label: { RawThumbnail(url: library.thumbnail(shot), date: shot.date).id(shot) }
+                                } label: { RawThumbnail(url: library.thumbnail(shot), date: shot.date).id("\(shot.id)-\(library.thumbnailRevision)") }
                             }
                         }
                     }
