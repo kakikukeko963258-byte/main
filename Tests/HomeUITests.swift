@@ -2,6 +2,32 @@ import XCTest
 
 final class HomeUITests: XCTestCase {
     @MainActor
+    func testRawCamera() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-raw-direct-ui-test"]
+        addUIInterruptionMonitor(withDescription: "Camera permission") { alert in
+            if alert.buttons["Allow"].exists { alert.buttons["Allow"].tap(); return true }
+            if alert.buttons["OK"].exists { alert.buttons["OK"].tap(); return true }
+            return false
+        }
+        app.launch()
+        XCTAssertTrue(app.buttons["raw-shutter"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["raw-camera-status"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["raw-shutter"].isEnabled)
+        capture("raw-camera-unavailable-simulator")
+        app.buttons["raw-settings"].tap()
+        XCTAssertTrue(app.switches["グリッド"].waitForExistence(timeout: 5))
+        app.switches["グリッド"].tap()
+        app.buttons["完了"].tap()
+        app.buttons["raw-gallery"].tap()
+        XCTAssertTrue(app.staticTexts["まだ写真がありません"].waitForExistence(timeout: 5))
+        capture("raw-gallery-empty")
+        app.buttons["閉じる"].tap()
+        app.buttons["ホームへ戻る"].tap()
+        XCTAssertTrue(app.buttons["アプリ 1"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     func testRailNavigation() {
         let app = XCUIApplication()
         app.launchArguments = ["-rail-direct-ui-test"]

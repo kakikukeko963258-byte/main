@@ -36,10 +36,10 @@ enum IconArtwork {
                 context.addPath(path); context.setStrokeColor(UIColor.white.withAlphaComponent(0.30).cgColor)
                 context.setLineWidth(1.3); context.strokePath()
             }
-            let font = UIFont.systemFont(ofSize: side * 0.44, weight: .medium)
+            let font = UIFont.systemFont(ofSize: side * (slot == 6 ? 0.24 : 0.44), weight: .medium)
             let rounded = UIFont(descriptor: font.fontDescriptor.withDesign(.rounded) ?? font.fontDescriptor, size: font.pointSize)
             let attributes: [NSAttributedString.Key: Any] = [.font: rounded, .foregroundColor: UIColor.white]
-            let text = "\(slot)" as NSString
+            let text = (slot == 6 ? "RAW" : "\(slot)") as NSString
             let textSize = text.size(withAttributes: attributes)
             text.draw(at: CGPoint(x: (side - textSize.width) / 2, y: (side - textSize.height) / 2), withAttributes: attributes)
         }

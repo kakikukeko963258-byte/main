@@ -30,6 +30,7 @@ jobs:
       ONLY_HAPTICS: ${{ contains(github.event.head_commit.message, '[haptics]') }}
       ONLY_LISTENING: ${{ inputs.only_listening || contains(github.event.head_commit.message, '[listening]') }}
       ONLY_CHARGING: ${{ contains(github.event.head_commit.message, '[charging]') }}
+      ONLY_RAW: ${{ contains(github.event.head_commit.message, '[raw]') }}
       ONLY_RAIL: ${{ contains(github.event.head_commit.message, '[rail]') }}
     steps:
       - uses: actions/checkout@v4
@@ -110,6 +111,9 @@ jobs:
           fi
           if [ "$ONLY_RAIL" = "true" ]; then
             TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testRailNavigation)
+          fi
+          if [ "$ONLY_RAW" = "true" ]; then
+            TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testRawCamera)
           fi
           xcodebuild test -project main.xcodeproj -scheme main -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 -derivedDataPath simulator-build -resultBundlePath TestResults.xcresult "${TEST_FILTER[@]}" CODE_SIGNING_ALLOWED=NO
           kill -INT "$RECORD_PID" 2>/dev/null || true
