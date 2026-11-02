@@ -1,6 +1,11 @@
 name: Export saved verification images
 on:
   workflow_dispatch:
+    inputs:
+      run_id:
+        description: Build run containing visual-verification
+        required: true
+        type: string
 permissions:
   actions: read
   contents: read
@@ -11,7 +16,8 @@ jobs:
       - name: Download completed UI test results
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh run download 38941387638 --repo "$GITHUB_REPOSITORY" --name visual-verification --dir verification
+          SOURCE_RUN: ${{ inputs.run_id }}
+        run: gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" --name visual-verification --dir verification
       - name: Export screenshots
         run: xcrun xcresulttool export attachments --path verification/TestResults.xcresult --output-path screenshots
       - uses: actions/upload-artifact@v4
