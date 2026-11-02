@@ -108,7 +108,7 @@ targets:
         SKIP_INSTALL: YES
         SWIFT_VERSION: '5.0'
   mainRawTests:
-    type: bundle.unit-testing
+    type: bundle.unit-test
     platform: iOS
     sources: [TestsRaw, Main/RawCamera/RawPhotoLibrary.swift]
     settings:
@@ -133,3 +133,4 @@ schemes:
         main: all
     test:
       targets: [mainUITests, mainRawTests]
+
