@@ -42,7 +42,7 @@ jobs:
         if: env.RUN_CHECKS == 'true'
         run: |
           swiftc -parse-as-library Main/RawCamera/RawDeveloper.swift Main/RawCamera/RawPhotoLibrary.swift scripts/RawDeveloperChecks.swift -o /tmp/raw-checks
-          /tmp/raw-checks TestsRaw/Synthetic.dng
+          /tmp/raw-checks TestsRaw/iPhone6sPlus.dng
       - name: Verify textbook audio and word timings
         if: env.RUN_CHECKS == 'true'
         run: python3 scripts/check-listening-assets.py

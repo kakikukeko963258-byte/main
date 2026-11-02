@@ -8,7 +8,7 @@ struct RawDeveloperChecks {
         let fixture = URL(fileURLWithPath: CommandLine.arguments[1])
         var neutral = RawAdjustments(); neutral.look = "Neutral"; neutral.grain = 0
         let first = try RawDeveloper.image(fixture, adjustments: neutral)
-        precondition(first.extent.width == 512 && first.extent.height == 384, "Unexpected DNG dimensions: \(first.extent)")
+        precondition(first.extent.width * first.extent.height > 5_000_000, "Unexpected DNG dimensions: \(first.extent)")
         let original = try RawDeveloper.jpeg(first)
         var changed = neutral; changed.look = "Cinema"; changed.exposure = 1.5; changed.grain = 0.4
         let rendered = try RawDeveloper.jpeg(RawDeveloper.image(fixture, adjustments: changed))

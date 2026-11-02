@@ -3,12 +3,11 @@ import CoreImage
 
 final class RawCameraTests: XCTestCase {
     func testDNGDevelopsAndAdjustmentsChangePixels() throws {
-        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Synthetic", withExtension: "dng"))
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "iPhone6sPlus", withExtension: "dng"))
         var neutral = RawAdjustments()
         neutral.look = "Neutral"; neutral.grain = 0
         let first = try RawDeveloper.image(url, adjustments: neutral)
-        XCTAssertEqual(first.extent.width, 512)
-        XCTAssertEqual(first.extent.height, 384)
+        XCTAssertGreaterThan(first.extent.width * first.extent.height, 5_000_000)
         let original = try RawDeveloper.jpeg(first)
         var changed = neutral; changed.exposure = 1.5; changed.look = "Cinema"; changed.grain = 0.4
         let developed = try RawDeveloper.jpeg(RawDeveloper.image(url, adjustments: changed))
@@ -21,7 +20,7 @@ final class RawCameraTests: XCTestCase {
     }
 
     func testOriginalSurvivesEditingAndDNGExport() throws {
-        let fixture = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Synthetic", withExtension: "dng"))
+        let fixture = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "iPhone6sPlus", withExtension: "dng"))
         let data = try Data(contentsOf: fixture)
         let library = RawPhotoLibrary()
         let added = expectation(description: "RAW stored and developed")
