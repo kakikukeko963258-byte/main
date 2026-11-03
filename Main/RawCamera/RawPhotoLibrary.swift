@@ -96,7 +96,6 @@ final class RawPhotoLibrary: ObservableObject {
     }
     func save(_ shot: RawShot, adjustments: RawAdjustments) {
         var updated = shot; updated.adjustments = adjustments
-        busy = true
         queue.async {
             do {
                 try JSONEncoder().encode(updated).write(to: self.metadata(updated), options: .atomic)
@@ -106,8 +105,8 @@ final class RawPhotoLibrary: ObservableObject {
                 }
                 let image = try RawDeveloper.image(self.original(updated), adjustments: adjustments, maxSide: 1200)
                 try RawDeveloper.jpeg(image).write(to: self.thumbnail(updated), options: .atomic)
-                DispatchQueue.main.async { self.thumbnailRevision += 1; self.busy = false }
-            } catch { DispatchQueue.main.async { self.error = error.localizedDescription; self.busy = false } }
+                DispatchQueue.main.async { self.thumbnailRevision += 1 }
+            } catch { DispatchQueue.main.async { self.error = error.localizedDescription } }
         }
     }
     func export(_ shot: RawShot, kind: String, maxSide: Int? = nil, completion: @escaping (URL?) -> Void) {

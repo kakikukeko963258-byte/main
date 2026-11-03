@@ -71,6 +71,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kakikukeko.main
+        SWIFT_OBJC_BRIDGING_HEADER: Main/RawCamera/RawCameraBridge.h
         PRODUCT_NAME: main
         INFOPLIST_KEY_CFBundleDisplayName: main
         GENERATE_INFOPLIST_FILE: NO

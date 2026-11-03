@@ -293,7 +293,11 @@ struct RawViewerView: View {
     private func adjust(_ title: String, _ value: Binding<Double>, _ range: ClosedRange<Double>) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack { Text(title); Spacer(); Text(String(format: "%.2f", value.wrappedValue)).monospacedDigit() }.font(.system(size: 10)).foregroundStyle(.secondary)
-            Slider(value: value, in: range, onEditingChanged: { started in
+            Slider(value: Binding(get: { value.wrappedValue }, set: { next in
+                let previous = adjustments
+                value.wrappedValue = next
+                if beforeGesture == nil && previous != adjustments { undo.append(previous); redo.removeAll() }
+            }), in: range, onEditingChanged: { started in
                 if started { beforeGesture = adjustments }
                 else if let before = beforeGesture, before != adjustments { undo.append(before); if undo.count > 100 { undo.removeFirst() }; redo.removeAll(); beforeGesture = nil }
             }).tint(rawAccent).accessibilityLabel(title)

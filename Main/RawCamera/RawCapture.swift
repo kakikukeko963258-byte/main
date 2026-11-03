@@ -217,30 +217,30 @@ final class RawCapture: NSObject, ObservableObject, AVCapturePhotoCaptureDelegat
         let selectedMode = mode, requested = requestedMP, useFlash = flash
         queue.async {
             guard let device = self.device else { DispatchQueue.main.async { self.capturing = false }; return }
-            let settings: AVCapturePhotoSettings
+            let attempt: RawPhotoSettingsAttempt
             if selectedMode == "HEIC" {
                 let codec: AVVideoCodecType = self.output.availablePhotoCodecTypes.contains(.hevc) ? .hevc : .jpeg
-                settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: codec])
+                attempt = RawMakePhotoSettings(0, codec.rawValue)
                 self.captureFormat = codec == .hevc ? "HEIC" : "JPEG"
             } else {
                 let chosen = self.output.availableRawPhotoPixelFormatTypes.first { selectedMode == "ProRAW" ? AVCapturePhotoOutput.isAppleProRAWPixelFormat($0) : AVCapturePhotoOutput.isBayerRAWPixelFormat($0) }
                 guard let format = chosen else {
                     DispatchQueue.main.async { self.capturing = false; self.message = "このレンズでは選択したRAW形式を利用できません。HEICまたは別のレンズを選択してください。" }; return
                 }
-                settings = AVCapturePhotoSettings(rawPixelFormatType: format)
+                attempt = RawMakePhotoSettings(format, nil)
                 self.captureFormat = selectedMode
+            }
+            guard let settings = attempt.settings else {
+                DispatchQueue.main.async { self.capturing = false; self.message = attempt.errorMessage ?? "撮影形式を設定できません。" }; return
             }
             let dimensions = device.activeFormat.supportedMaxPhotoDimensions.sorted { Int64($0.width) * Int64($0.height) < Int64($1.width) * Int64($1.height) }
             let size = (requested == 48) ? dimensions.last : (dimensions.first(where: { Int64($0.width) * Int64($0.height) >= 11_000_000 }) ?? dimensions.first)
-            if let size { settings.maxPhotoDimensions = size }
             self.requestedPixels = requested == 48 ? 48_000_000 : 12_000_000
-            settings.photoQualityPrioritization = .quality
-            settings.flashMode = useFlash && self.output.supportedFlashModes.contains(.on) ? .on : .off
             self.pendingData = nil; self.pendingError = nil; self.pendingMetadata = nil
-            if let connection = self.output.connection(with: .video), connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90
-                if connection.isVideoMirroringSupported { connection.isVideoMirrored = device.position == .front && (UserDefaults.standard.object(forKey: "raw-mirror-front") as? Bool ?? true) }
+            let mirrored = device.position == .front && (UserDefaults.standard.object(forKey: "raw-mirror-front") as? Bool ?? true)
+            if let failure = RawPerformCapture(self.output, settings, size ?? self.maximum, useFlash, mirrored, self) {
+                DispatchQueue.main.async { self.capturing = false; self.message = failure }
             }
-            self.output.capturePhoto(with: settings, delegate: self)
         }
     }
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
