@@ -180,7 +180,7 @@ struct RawViewerView: View {
             }.padding(.horizontal, 12)
             ZStack {
                 Color.clear
-                if let image { Image(uiImage: image).resizable().scaledToFit().accessibilityIdentifier("raw-rendered-photo") }
+                if let image { Image(uiImage: image).resizable().scaledToFit() }
                 if rendering { ProgressView().padding(10).background(.black.opacity(0.6), in: Circle()) }
                 if let error { Text(error).font(.callout).multilineTextAlignment(.center).padding() }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -200,6 +200,7 @@ struct RawViewerView: View {
                     adjustments.cropY = min(1, max(0, start.cropY + Double(value.translation.height) / span))
                 }.onEnded { _ in finishCropGesture() })
                 .accessibilityLabel(comparing ? "原本を比較中" : "現像した写真")
+                .accessibilityIdentifier(image == nil ? "raw-photo-loading" : "raw-rendered-photo")
             if editing { editorControls }
             if !editing {
                 Button { editing = true } label: { Image(systemName: "slider.horizontal.3").frame(width: 44, height: 40).background(.white.opacity(0.06), in: Circle()) }.accessibilityLabel("編集").accessibilityIdentifier("raw-edit")

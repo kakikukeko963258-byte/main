@@ -13,6 +13,7 @@ struct RawCameraView: View {
     @State private var preferences = false
     @State private var exposurePanel = false
     @State private var countdown = 0
+    @State private var previousIdleState: Bool?
     @State private var timerTask: Task<Void, Never>?
     @AppStorage("raw-grid") private var grid = false
     @AppStorage("raw-capture-aspect") private var aspect = "Original"
@@ -138,9 +139,14 @@ struct RawCameraView: View {
     private func clearNotice() { library.error = nil; library.notice = nil; camera.lastCaptureWarning = nil }
     private func start() {
         guard scenePhase == .active, !gallery, !preferences else { return }
+        if previousIdleState == nil { previousIdleState = UIApplication.shared.isIdleTimerDisabled }
+        UIApplication.shared.isIdleTimerDisabled = true
         camera.start { data, format, metadata, done in library.add(data: data, format: format, metadata: metadata, completion: done) }
     }
-    private func stop() { timerTask?.cancel(); timerTask = nil; countdown = 0; camera.stop() }
+    private func stop() {
+        timerTask?.cancel(); timerTask = nil; countdown = 0; camera.stop()
+        if let previous = previousIdleState { UIApplication.shared.isIdleTimerDisabled = previous; previousIdleState = nil }
+    }
     private func shutter() {
         if countdown > 0 { timerTask?.cancel(); countdown = 0; return }
         guard timer > 0 else { camera.capture(); return }
