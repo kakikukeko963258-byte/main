@@ -117,6 +117,25 @@ targets:
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
         SWIFT_VERSION: '5.0'
+  RawCameraQA:
+    type: application
+    platform: iOS
+    sources: [RawCameraQA]
+    info:
+      path: RawCameraQA/Info.plist
+      properties:
+        CFBundleDisplayName: Camera QA
+        CFBundleShortVersionString: '1.0.0'
+        CFBundleVersion: '1'
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kakikukeko.RawCameraQA
+        PRODUCT_NAME: RawCameraQA
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_VERSION: '5.0'
+        TARGETED_DEVICE_FAMILY: '1'
   mainRawTests:
     type: bundle.unit-test
     platform: iOS
@@ -137,6 +156,10 @@ targets:
         SWIFT_VERSION: '5.0'
         TEST_TARGET_NAME: main
 schemes:
+  RawCameraQA:
+    build:
+      targets:
+        RawCameraQA: all
   main:
     build:
       targets:

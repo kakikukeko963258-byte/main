@@ -28,6 +28,7 @@ final class RawCameraTests: XCTestCase {
         wait(for: [added], timeout: 30)
         let shot = try XCTUnwrap(library.shots.first)
         defer {
+            try? FileManager.default.removeItem(at: library.thumbnail(shot))
             for suffix in ["dng", "json", "jpg"] {
                 try? FileManager.default.removeItem(at: library.root.appendingPathComponent(shot.stem + "." + suffix))
             }
@@ -73,6 +74,7 @@ final class RawCameraTests: XCTestCase {
         wait(for: [finished], timeout: 20)
         let shot = try XCTUnwrap(library.shots.first)
         defer {
+            try? FileManager.default.removeItem(at: library.thumbnail(shot))
             for suffix in ["dng", "json", "jpg"] {
                 try? FileManager.default.removeItem(at: library.root.appendingPathComponent(shot.stem + "." + suffix))
             }

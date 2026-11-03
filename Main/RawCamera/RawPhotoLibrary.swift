@@ -37,7 +37,13 @@ final class RawPhotoLibrary: ObservableObject {
         #endif
     }
     func original(_ shot: RawShot) -> URL { root.appendingPathComponent(shot.stem + "." + shot.fileExtension) }
-    func thumbnail(_ shot: RawShot) -> URL { root.appendingPathComponent(shot.stem + ".jpg") }
+    func thumbnail(_ shot: RawShot) -> URL {
+        let current = root.appendingPathComponent(shot.stem + "-preview.jpg")
+        let legacy = root.appendingPathComponent(shot.stem + ".jpg")
+        // JPEG originals and previews must never share a path. Retain old DNG thumbnails.
+        if shot.fileExtension != "jpg" && !FileManager.default.fileExists(atPath: current.path) && FileManager.default.fileExists(atPath: legacy.path) { return legacy }
+        return current
+    }
     private func metadata(_ shot: RawShot) -> URL { root.appendingPathComponent(shot.stem + ".json") }
     func add(data: Data, format: String, metadata: RawCaptureMetadata? = nil, captured: Bool = true, completion: @escaping () -> Void) {
         var defaults = RawPreferences.recipe

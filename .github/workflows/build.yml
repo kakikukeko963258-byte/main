@@ -75,6 +75,23 @@ jobs:
           ruby -e "require 'xcodeproj'" || gem install xcodeproj --no-document
           bash scripts/build-embedded-wda.sh
           bash scripts/package-ipa.sh
+      - name: Build separate device verification host
+        if: env.ONLY_RAW == 'true'
+        run: |
+          set -euo pipefail
+          xcodebuild -project main.xcodeproj -scheme RawCameraQA -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath qa-build CODE_SIGNING_ALLOWED=NO build
+          QA_APP=qa-build/Build/Products/Release-iphoneos/RawCameraQA.app
+          mkdir -p "$QA_APP/Frameworks"
+          ditto build/Build/Products/Release-iphoneos/main.app/Frameworks/WebDriverAgentLib.framework "$QA_APP/Frameworks/WebDriverAgentLib.framework"
+          codesign --force --sign - "$QA_APP"
+          mkdir -p qa-dist/Payload
+          ditto "$QA_APP" qa-dist/Payload/RawCameraQA.app
+          (cd qa-dist && zip -qry RawCameraQA.ipa Payload)
+      - uses: actions/upload-artifact@v4
+        if: env.ONLY_RAW == 'true'
+        with:
+          name: raw-camera-qa
+          path: qa-dist/RawCameraQA.ipa
       - uses: actions/upload-artifact@v4
         with:
           name: main-ipa
