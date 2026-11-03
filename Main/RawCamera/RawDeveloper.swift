@@ -1,6 +1,7 @@
 import Foundation
 import CoreImage
 import CoreImage.CIFilterBuiltins
+import ImageIO
 
 struct RawAdjustments: Codable, Equatable {
     var exposure = 0.0, warmth = 0.0, tint = 0.0, saturation = 1.0, contrast = 1.0
@@ -165,6 +166,25 @@ enum RawDeveloper {
             return premultiply(color);
         }
         """)
+    static func encoded(_ image: CIImage, kind: String, properties: [String: Any]) throws -> Data {
+        let data = NSMutableData()
+        guard let cg = context.createCGImage(image, from: image.extent, format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)),
+              let destination = CGImageDestinationCreateWithData(data, (kind == "HEIC" ? "public.heic" : "public.jpeg") as CFString, 1, nil) else {
+            throw RawCameraError.message("画像の書き出しを開始できません。")
+        }
+        var metadata = properties
+        metadata[kCGImageDestinationLossyCompressionQuality as String] = 0.94
+        metadata[kCGImagePropertyOrientation as String] = 1
+        metadata[kCGImagePropertyPixelWidth as String] = cg.width
+        metadata[kCGImagePropertyPixelHeight as String] = cg.height
+        var exif = metadata[kCGImagePropertyExifDictionary as String] as? [String: Any] ?? [:]
+        exif[kCGImagePropertyExifPixelXDimension as String] = cg.width
+        exif[kCGImagePropertyExifPixelYDimension as String] = cg.height
+        metadata[kCGImagePropertyExifDictionary as String] = exif
+        CGImageDestinationAddImage(destination, cg, metadata as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { throw RawCameraError.message("画像の書き出しに失敗しました。") }
+        return data as Data
+    }
     static func jpeg(_ image: CIImage) throws -> Data {
         guard let data = context.jpegRepresentation(of: image, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
                                                      options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.94]) else {

@@ -41,6 +41,7 @@ final class HomeUITests: XCTestCase {
         photo.tap()
         let edit = app.buttons["raw-edit"]
         XCTAssertTrue(edit.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.images["raw-rendered-photo"].waitForExistence(timeout: 40))
         capture("raw-viewer")
         edit.tap()
         app.buttons["raw-tab-Color"].tap()

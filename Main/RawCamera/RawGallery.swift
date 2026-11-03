@@ -180,7 +180,7 @@ struct RawViewerView: View {
             }.padding(.horizontal, 12)
             ZStack {
                 Color.clear
-                if let image { Image(uiImage: image).resizable().scaledToFit() }
+                if let image { Image(uiImage: image).resizable().scaledToFit().accessibilityIdentifier("raw-rendered-photo") }
                 if rendering { ProgressView().padding(10).background(.black.opacity(0.6), in: Circle()) }
                 if let error { Text(error).font(.callout).multilineTextAlignment(.center).padding() }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)

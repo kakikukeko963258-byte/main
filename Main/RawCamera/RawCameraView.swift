@@ -164,6 +164,7 @@ struct RawPreferencesView: View {
     @AppStorage("raw-export-size") private var size = 0
     @AppStorage("raw-default-lens") private var lens = ""
     @AppStorage("raw-mirror-front") private var mirror = true
+    @AppStorage("raw-export-location") private var includeLocation = false
     @AppStorage("raw-gallery-columns") private var columns = 5
     var body: some View {
         NavigationStack {
@@ -184,6 +185,7 @@ struct RawPreferencesView: View {
                     Toggle("撮影後に写真へ保存", isOn: $auto)
                     Picker("形式", selection: $format) { Text("JPEG").tag("JPEG"); Text("HEIC").tag("HEIC") }
                     RawExportSizePicker(size: $size)
+                    Toggle("元写真の位置情報を含める", isOn: $includeLocation)
                 }
                 Section("ギャラリー") {
                     Picker("列数", selection: $columns) { ForEach([3, 4, 5], id: \.self) { Text("\($0)列").tag($0) } }

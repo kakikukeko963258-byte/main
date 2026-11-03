@@ -45,6 +45,7 @@ final class RawPhotoLibrary: ObservableObject {
         queue.async {
             let ext = format == "HEIC" ? "heic" : format == "JPEG" ? "jpg" : format == "PNG" ? "png" : format == "TIFF" ? "tiff" : "dng"
             var details = metadata
+            var date = Date()
             if let source = CGImageSourceCreateWithData(data as CFData, nil), let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
                 var width = (properties[kCGImagePropertyPixelWidth as String] as? NSNumber)?.intValue ?? 0
                 var height = (properties[kCGImagePropertyPixelHeight as String] as? NSNumber)?.intValue ?? 0
@@ -53,12 +54,23 @@ final class RawPhotoLibrary: ObservableObject {
                     if details == nil { details = RawCaptureMetadata(width: width, height: height) }
                     details?.temperature = Double(raw.neutralTemperature)
                 }
+                let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any] ?? [:]
+                if let timestamp = exif[kCGImagePropertyExifDateTimeOriginal as String] as? String {
+                    let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
+                    if let offset = exif["OffsetTimeOriginal"] as? String { formatter.dateFormat = "yyyy:MM:dd HH:mm:ssXXX"; date = formatter.date(from: timestamp + offset) ?? date }
+                    else { formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"; date = formatter.date(from: timestamp) ?? date }
+                }
+                if details == nil { details = RawCaptureMetadata(width: width, height: height) }
+                if details?.iso == nil { details?.iso = (exif[kCGImagePropertyExifISOSpeedRatings as String] as? [NSNumber])?.first?.doubleValue }
+                if details?.seconds == nil { details?.seconds = (exif[kCGImagePropertyExifExposureTime as String] as? NSNumber)?.doubleValue }
+                if details?.aperture == nil { details?.aperture = (exif[kCGImagePropertyExifFNumber as String] as? NSNumber)?.doubleValue }
+                if details?.lens == nil { details?.lens = exif[kCGImagePropertyExifLensModel as String] as? String }
                 if width > 0 && height > 0 {
                     if details == nil { details = RawCaptureMetadata(width: width, height: height) }
                     else { details?.width = width; details?.height = height }
                 }
             }
-            let shot = RawShot(id: UUID(), date: Date(), format: format, adjustments: defaults, originalExtension: ext, capture: details)
+            let shot = RawShot(id: UUID(), date: date, format: format, adjustments: defaults, originalExtension: ext, capture: details)
             do {
                 try data.write(to: self.original(shot), options: .atomic)
                 try JSONEncoder().encode(shot).write(to: self.metadata(shot), options: .atomic)
@@ -105,10 +117,14 @@ final class RawPhotoLibrary: ObservableObject {
                 if kind == "DNG" || kind == "Original" { try FileManager.default.copyItem(at: self.original(shot), to: url) }
                 else {
                     let image = try RawDeveloper.image(self.original(shot), adjustments: shot.adjustments, maxSide: exportSide > 0 ? CGFloat(exportSide) : nil)
-                    if kind == "HEIC" {
-                        try RawDeveloper.context.writeHEIFRepresentation(of: image, to: url, format: .RGBA8,
-                            colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, options: [:])
-                    } else { try RawDeveloper.jpeg(image).write(to: url, options: .atomic) }
+                    var properties: [String: Any] = [:]
+                    if let source = CGImageSourceCreateWithURL(self.original(shot) as CFURL, nil), let original = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
+                        for key in [kCGImagePropertyExifDictionary, kCGImagePropertyTIFFDictionary] {
+                            if let value = original[key as String] { properties[key as String] = value }
+                        }
+                        if UserDefaults.standard.bool(forKey: "raw-export-location"), let gps = original[kCGImagePropertyGPSDictionary as String] { properties[kCGImagePropertyGPSDictionary as String] = gps }
+                    }
+                    try RawDeveloper.encoded(image, kind: kind, properties: properties).write(to: url, options: .atomic)
                 }
                 DispatchQueue.main.async { self.busy = false; completion(url) }
             } catch { DispatchQueue.main.async { self.busy = false; self.error = error.localizedDescription; completion(nil) } }

@@ -51,6 +51,22 @@ struct RawDeveloperChecks {
             if kind == "DNG" { let exported = try Data(contentsOf: url); precondition(exported == data, "DNG export changed original") }
             else { precondition(CGImageSourceCreateWithURL(url as CFURL, nil) != nil, "Unreadable export") }
         }
+        let smallURL = await withCheckedContinuation { (done: CheckedContinuation<URL?, Never>) in
+            library.export(saved, kind: "JPEG", maxSide: 1024) { done.resume(returning: $0) }
+        }
+        guard let smallURL, let smallSource = CGImageSourceCreateWithURL(smallURL as CFURL, nil),
+              let smallProperties = CGImageSourceCopyPropertiesAtIndex(smallSource, 0, nil) as? [String: Any] else { fatalError("Sized export missing") }
+        defer { try? FileManager.default.removeItem(at: smallURL) }
+        let smallWidth = (smallProperties[kCGImagePropertyPixelWidth as String] as? NSNumber)?.intValue ?? 0
+        let smallHeight = (smallProperties[kCGImagePropertyPixelHeight as String] as? NSNumber)?.intValue ?? 0
+        precondition(max(smallWidth, smallHeight) == 1024, "Export size is not the requested 1024 pixels")
+        if let inputSource = CGImageSourceCreateWithURL(fixture as CFURL, nil), let inputProperties = CGImageSourceCopyPropertiesAtIndex(inputSource, 0, nil) as? [String: Any],
+           let inputExif = inputProperties[kCGImagePropertyExifDictionary as String] as? [String: Any],
+           let expected = inputExif[kCGImagePropertyExifDateTimeOriginal as String] as? String {
+            let outputExif = smallProperties[kCGImagePropertyExifDictionary as String] as? [String: Any]
+            precondition(outputExif?[kCGImagePropertyExifDateTimeOriginal as String] as? String == expected, "Capture date lost on export")
+        }
+        precondition(smallProperties[kCGImagePropertyGPSDictionary as String] == nil, "Location should be excluded by default")
         var cropped = changed
         cropped.cropAspect = "1:1"; cropped.cropZoom = 1.2; cropped.rotation = 1; cropped.flipH = true; cropped.cropX = 0.2
         let square = try RawDeveloper.image(fixture, adjustments: cropped, maxSide: 256)
@@ -81,6 +97,18 @@ struct RawDeveloperChecks {
         try imports.importImageData(data)
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in imports.queue.async { DispatchQueue.main.async { done.resume() } } }
         precondition(imports.shots.first?.isRAW == true && imports.error == nil, imports.error ?? "DNG import failed")
+        let jpegData = try RawDeveloper.jpeg(reduced)
+        try imports.importImageData(jpegData)
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in imports.queue.async { DispatchQueue.main.async { done.resume() } } }
+        guard let jpegShot = imports.shots.first(where: { $0.format == "JPEG" }) else { fatalError(imports.error ?? "JPEG import missing") }
+        let jpegOriginal = try Data(contentsOf: imports.original(jpegShot))
+        precondition(!jpegShot.isRAW && jpegShot.fileExtension == "jpg" && jpegOriginal == jpegData, "Processed original mislabeled or changed")
+        let mixedArchive = await withCheckedContinuation { (done: CheckedContinuation<URL?, Never>) in imports.exportArchive(imports.shots) { done.resume(returning: $0) } }
+        guard let mixedArchive else { fatalError("Mixed archive missing") }
+        defer { try? FileManager.default.removeItem(at: mixedArchive) }
+        let mixed = RawPhotoLibrary(directory: base.appendingPathComponent("mixed"))
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in mixed.importArchive(mixedArchive) { done.resume() } }
+        precondition(mixed.shots.count == 2 && mixed.error == nil, mixed.error ?? "Mixed originals did not round trip")
         print("RAW checks passed: archive round trip and rollback, legacy edits, accurate stored MP, crop and resize; DNG development, editing, stable grain, preview scale, durable metadata, unchanged original, DNG/JPEG/HEIC export")
     }
 }
