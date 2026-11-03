@@ -121,7 +121,7 @@ jobs:
           xcrun simctl io "$SIMULATOR_ID" recordVideo --codec=h264 motion.mov > /tmp/recording.log 2>&1 &
           RECORD_PID=$!
           trap 'kill -INT "$RECORD_PID" 2>/dev/null || true' EXIT
-          TEST_FILTER=()
+          TEST_FILTER=(-only-testing:mainUITests -only-testing:mainRawTests)
           if [ "$ONLY_CHARGING" = "true" ]; then
             TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testChargingMonitor -only-testing:mainUITests/HomeUITests/testChargingPiP -only-testing:mainUITests/HomeUITests/testListeningChapterPlaybackAndHighlight)
           fi
