@@ -137,6 +137,7 @@ final class RawCapture: NSObject, ObservableObject, AVCapturePhotoCaptureDelegat
         UserDefaults.standard.set(value, forKey: "raw-capture-mode"); updateResolutionLabel()
     }
     func setMegapixels(_ value: Int) {
+        if value == 48 && zoom != 1 { setZoom(1) }
         requestedMP = value; UserDefaults.standard.set(value, forKey: "raw-megapixels"); updateResolutionLabel()
     }
     private func updateResolutionLabel() {
@@ -151,6 +152,7 @@ final class RawCapture: NSObject, ObservableObject, AVCapturePhotoCaptureDelegat
     func setZoom(_ value: CGFloat) {
         guard !capturing else { return }
         zoom = value
+        if value > 1 { requestedMP = 12; UserDefaults.standard.set(12, forKey: "raw-megapixels"); updateResolutionLabel() }
         queue.async {
             guard let device = self.device else { return }
             do { try device.lockForConfiguration(); device.videoZoomFactor = min(device.maxAvailableVideoZoomFactor, max(device.minAvailableVideoZoomFactor, value)); device.unlockForConfiguration() }
@@ -310,7 +312,7 @@ struct RawCameraPreview: UIViewRepresentable {
     let camera: RawCapture
     func makeUIView(context: Context) -> RawPreviewUIView {
         let view = RawPreviewUIView()
-        view.preview.session = camera.session; view.preview.videoGravity = .resizeAspect
+        view.preview.session = camera.session; view.preview.videoGravity = .resizeAspectFill
         view.onFocus = { camera.focus($0, locked: $1) }
         return view
     }

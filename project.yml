@@ -128,7 +128,7 @@ targets:
   mainUITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [Tests]
+    sources: [Tests, {path: TestsRaw/iPhone6sPlus.dng, buildPhase: resources}]
     dependencies:
       - target: main
     settings:

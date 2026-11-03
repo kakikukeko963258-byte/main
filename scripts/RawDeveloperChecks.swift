@@ -17,10 +17,12 @@ struct RawDeveloperChecks {
         precondition(repeated == rendered, "Unstable grain")
         let reduced = try RawDeveloper.image(fixture, adjustments: neutral, maxSide: 128)
         precondition(max(reduced.extent.width, reduced.extent.height) <= 130, "Preview not reduced")
-        let library = RawPhotoLibrary()
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("RawChecks-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let library = RawPhotoLibrary(directory: base.appendingPathComponent("source"))
         let data = try Data(contentsOf: fixture)
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
-            library.add(data: data, format: "RAW") { done.resume() }
+            library.add(data: data, format: "RAW", metadata: RawCaptureMetadata(width: 8064, height: 6048)) { done.resume() }
         }
         guard let shot = library.shots.first else { fatalError("RAW was not saved") }
         defer {
@@ -29,12 +31,13 @@ struct RawDeveloperChecks {
             }
         }
         precondition(library.error == nil, library.error ?? "")
+        precondition((shot.capture?.megapixels ?? 0) < 14 && (shot.capture?.megapixels ?? 0) > 10, "Requested 48MP incorrectly reported as saved resolution")
         library.save(shot, adjustments: changed)
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
             library.queue.async { DispatchQueue.main.async { done.resume() } }
         }
         precondition(library.error == nil, library.error ?? "")
-        let reload = RawPhotoLibrary()
+        let reload = RawPhotoLibrary(directory: library.root)
         guard let saved = reload.shots.first(where: { $0.id == shot.id }) else { fatalError("Saved metadata missing") }
         precondition(saved.adjustments == changed, "Edits lost after reload")
         let originalAfterEditing = try Data(contentsOf: library.original(saved))
@@ -48,6 +51,36 @@ struct RawDeveloperChecks {
             if kind == "DNG" { let exported = try Data(contentsOf: url); precondition(exported == data, "DNG export changed original") }
             else { precondition(CGImageSourceCreateWithURL(url as CFURL, nil) != nil, "Unreadable export") }
         }
-        print("RAW checks passed: DNG development, editing, stable grain, preview scale, durable metadata, unchanged original, DNG/JPEG/HEIC export")
+        var cropped = changed
+        cropped.cropAspect = "1:1"; cropped.cropZoom = 1.2; cropped.rotation = 1; cropped.flipH = true; cropped.cropX = 0.2
+        let square = try RawDeveloper.image(fixture, adjustments: cropped, maxSide: 256)
+        precondition(abs(square.extent.width - square.extent.height) < 1 && abs(square.extent.width - 256) < 1, "Crop or export dimensions incorrect: \(square.extent)")
+        let oldRecipe = try JSONDecoder().decode(RawAdjustments.self, from: Data("{\"exposure\":0.5,\"warmth\":0,\"saturation\":1,\"contrast\":1,\"grain\":0.3,\"look\":\"Cinema\"}".utf8))
+        precondition(oldRecipe.exposure == 0.5 && oldRecipe.cropZoom == 1, "Legacy edits lost")
+        let archive = await withCheckedContinuation { (done: CheckedContinuation<URL?, Never>) in
+            library.exportArchive([saved]) { done.resume(returning: $0) }
+        }
+        guard let archive else { fatalError(library.error ?? "Archive export failed") }
+        defer { try? FileManager.default.removeItem(at: archive) }
+        let restored = RawPhotoLibrary(directory: base.appendingPathComponent("restored"))
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in restored.importArchive(archive) { done.resume() } }
+        guard let restoredShot = restored.shots.first else { fatalError(restored.error ?? "Archive import failed") }
+        let restoredData = try Data(contentsOf: restored.original(restoredShot))
+        precondition(restoredData == data && restoredShot.adjustments == changed && restoredShot.id != saved.id, "Archive did not preserve original and edits independently")
+        let manifestURL = archive.appendingPathComponent("manifest.json")
+        var manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as! [String: Any]
+        var entries = manifest["shots"] as! [[String: Any]]
+        var absent = entries[0]; absent["id"] = UUID().uuidString; entries.append(absent); manifest["shots"] = entries
+        try JSONSerialization.data(withJSONObject: manifest).write(to: manifestURL)
+        let broken = RawPhotoLibrary(directory: base.appendingPathComponent("broken"))
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in broken.importArchive(archive) { done.resume() } }
+        precondition(broken.error != nil && broken.shots.isEmpty, "Incomplete archive import should fail atomically")
+        let remaining = try FileManager.default.contentsOfDirectory(atPath: broken.root.path)
+        precondition(remaining.isEmpty, "Failed import left partial files")
+        let imports = RawPhotoLibrary(directory: base.appendingPathComponent("imports"))
+        try imports.importImageData(data)
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in imports.queue.async { DispatchQueue.main.async { done.resume() } } }
+        precondition(imports.shots.first?.isRAW == true && imports.error == nil, imports.error ?? "DNG import failed")
+        print("RAW checks passed: archive round trip and rollback, legacy edits, accurate stored MP, crop and resize; DNG development, editing, stable grain, preview scale, durable metadata, unchanged original, DNG/JPEG/HEIC export")
     }
 }

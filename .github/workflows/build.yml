@@ -118,13 +118,15 @@ jobs:
             TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testRailNavigation)
           fi
           if [ "$ONLY_RAW" = "true" ]; then
-            TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testRawCamera -only-testing:mainRawTests)
+            TEST_FILTER=(-only-testing:mainUITests/HomeUITests/testRawCamera -only-testing:mainUITests/HomeUITests/testRawEditorWorkflow -only-testing:mainRawTests)
           fi
-          xcodebuild test -project main.xcodeproj -scheme main -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 -derivedDataPath simulator-build -resultBundlePath TestResults.xcresult "${TEST_FILTER[@]}" CODE_SIGNING_ALLOWED=NO
+          TEST_STATUS=0
+          xcodebuild test -project main.xcodeproj -scheme main -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 -derivedDataPath simulator-build -resultBundlePath TestResults.xcresult "${TEST_FILTER[@]}" CODE_SIGNING_ALLOWED=NO || TEST_STATUS=$?
           kill -INT "$RECORD_PID" 2>/dev/null || true
           wait "$RECORD_PID" || true
           trap - EXIT
           xcrun xcresulttool export attachments --path TestResults.xcresult --output-path screenshots
+          exit "$TEST_STATUS"
       - uses: actions/upload-artifact@v4
         timeout-minutes: 3
         if: always() && env.RUN_UI_CHECKS == 'true'

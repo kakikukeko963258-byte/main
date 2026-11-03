@@ -39,7 +39,7 @@ extension RawPhotoLibrary {
         if format == "RAW" && !((type as String).lowercased().contains("dng")) && uniform.preferredFilenameExtension?.lowercased() != "dng" {
             throw RawCameraError.message("RAWの読み込みはDNG形式に対応しています。")
         }
-        add(data: data, format: format) { self.busy = false; self.notice = "読み込みました" }
+        add(data: data, format: format, captured: false) { self.busy = false; self.notice = "読み込みました" }
     }
     func exportArchive(_ selected: [RawShot], completion: @escaping (URL?) -> Void) {
         guard !selected.isEmpty else { return }
@@ -70,6 +70,10 @@ extension RawPhotoLibrary {
             var created: [URL] = []
             do {
                 let manifestURL = folder.appendingPathComponent("manifest.json")
+                let rootPath = folder.resolvingSymlinksInPath().standardizedFileURL.path + "/"
+                let manifestValues = try manifestURL.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey])
+                guard manifestValues.isSymbolicLink != true, manifestValues.isRegularFile == true,
+                      manifestURL.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(rootPath) else { throw RawCameraError.message("アーカイブの目録を確認できません。") }
                 guard (try manifestURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) < 32_000_000 else { throw RawCameraError.message("アーカイブの目録が大きすぎます。") }
                 let archive = try JSONDecoder().decode(RawArchiveManifest.self, from: Data(contentsOf: manifestURL))
                 guard archive.version == 1, archive.shots.count <= 10_000 else { throw RawCameraError.message("このアーカイブ形式は読み込めません。") }

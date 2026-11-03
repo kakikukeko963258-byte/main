@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 
+let rawAccent = Color(red: 0.71, green: 0.64, blue: 0.49)
 let rawBackground = Color(red: 0.065, green: 0.065, blue: 0.075)
 
 struct RawCameraView: View {
@@ -8,10 +9,13 @@ struct RawCameraView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var camera = RawCapture()
     @StateObject private var library = RawPhotoLibrary()
-    @State private var gallery = false, preferences = false, exposurePanel = false
+    @State private var gallery = false
+    @State private var preferences = false
+    @State private var exposurePanel = false
     @State private var countdown = 0
     @State private var timerTask: Task<Void, Never>?
     @AppStorage("raw-grid") private var grid = false
+    @AppStorage("raw-capture-aspect") private var aspect = "Original"
     @AppStorage("raw-timer") private var timer = 0
     @AppStorage("raw-mirror-front") private var mirrorFront = true
     private var currentLens: AVCaptureDevice? { camera.lenses.first { $0.uniqueID == camera.selectedLens } }
@@ -20,6 +24,9 @@ struct RawCameraView: View {
         VStack(spacing: 0) {
             HStack {
                 Button(action: onHome) { Image(systemName: "chevron.left").frame(width: 42, height: 44) }.accessibilityLabel("ホームへ戻る")
+                Menu {
+                    ForEach(["Original", "1:1", "4:3", "3:4", "9:16", "16:9"], id: \.self) { value in Button(value == "Original" ? "元の比率" : value) { aspect = value } }
+                } label: { Image(systemName: "viewfinder").frame(width: 30, height: 44) }.accessibilityLabel("撮影の比率")
                 Spacer()
                 Menu {
                     if camera.bayerAvailable {
@@ -76,7 +83,7 @@ struct RawCameraView: View {
                         Text(String(format: "%+.1f", camera.exposure)).monospacedDigit().frame(width: 36)
                     }.font(.caption).padding().background(.black.opacity(0.65)) }
                 }
-            }.aspectRatio(3.0/4, contentMode: .fit).background(.black).clipped()
+            }.aspectRatio(previewRatio, contentMode: .fit).background(.black).clipped()
             Spacer(minLength: 8)
             HStack(spacing: 10) {
                 ForEach(visibleLenses, id: \.uniqueID) { lens in
@@ -126,6 +133,7 @@ struct RawCameraView: View {
             Button("OK") { clearNotice() }
         } message: { Text(library.error ?? camera.lastCaptureWarning ?? library.notice ?? "") }
     }
+    private var previewRatio: CGFloat { ["1:1": 1, "4:3": 4.0/3, "3:4": 0.75, "9:16": 9.0/16, "16:9": 16.0/9][aspect] ?? 0.75 }
     private func choose(_ mode: String, _ mp: Int) { camera.setMode(mode); camera.setMegapixels(mp) }
     private func clearNotice() { library.error = nil; library.notice = nil; camera.lastCaptureWarning = nil }
     private func start() {

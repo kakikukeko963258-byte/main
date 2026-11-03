@@ -7,7 +7,10 @@ struct RawGalleryView: View {
     @ObservedObject var camera: RawCapture
     @Environment(\.dismiss) private var dismiss
     @AppStorage("raw-gallery-columns") private var columns = 5
-    @State private var selecting = false, confirmDelete = false, fileImport = false, preferences = false
+    @State private var selecting = false
+    @State private var confirmDelete = false
+    @State private var fileImport = false
+    @State private var preferences = false
     @State private var selected: Set<UUID> = []
     @State private var photo: PhotosPickerItem?
     @State private var share: RawShareItem?
@@ -33,7 +36,7 @@ struct RawGalleryView: View {
                                                     .overlay(alignment: .bottomTrailing) { Image(systemName: selected.contains(shot.id) ? "checkmark.circle.fill" : "circle").foregroundStyle(.white).shadow(radius: 2).padding(4) }
                                             }
                                         } else {
-                                            NavigationLink { RawViewerView(library: library, initial: shot, onCamera: { dismiss() }) }
+                                            NavigationLink { RawViewerView(library: library, camera: camera, initial: shot, onCamera: { dismiss() }) }
                                             label: { RawThumbnail(url: library.thumbnail(shot), date: shot.date).id("\(shot.id)-\(library.thumbnailRevision)") }.accessibilityIdentifier("raw-shot-\(shot.id)")
                                         }
                                     }
@@ -70,7 +73,7 @@ struct RawGalleryView: View {
                 .sheet(item: $share, onDismiss: { share = nil }) { item in RawShareSheet(url: item.url).onDisappear { try? FileManager.default.removeItem(at: item.url) } }
                 .fileImporter(isPresented: $fileImport, allowedContentTypes: [.image, .rawCameraArchive, .folder]) { result in
                     switch result {
-                    case .success(let url): if url.pathExtension == "rawcamera" { library.importArchive(url) } else { library.importImage(url) }
+                    case .success(let url): if url.pathExtension == "rawcamera" || ((try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true) { library.importArchive(url) } else { library.importImage(url) }
                     case .failure(let error): library.error = error.localizedDescription
                     }
                 }
@@ -110,25 +113,35 @@ struct RawThumbnail: View {
 private struct RawRenderRequest: Equatable { var id: UUID; var adjustments: RawAdjustments; var compare: Bool }
 struct RawViewerView: View {
     @ObservedObject var library: RawPhotoLibrary
+    @ObservedObject var camera: RawCapture
     let onCamera: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var selectedID: UUID
     @State private var adjustments: RawAdjustments
-    @State private var undo: [RawAdjustments] = [], redo: [RawAdjustments] = []
+    @State private var undo: [RawAdjustments] = []
+    @State private var redo: [RawAdjustments] = []
     @State private var beforeGesture: RawAdjustments?
     @State private var image: UIImage?
     @State private var error: String?
-    @State private var editing = false, comparing = false, rendering = false, deleting = false
-    @State private var category = "Tone", texture = "Grain"
+    @State private var editing = false
+    @State private var comparing = false
+    @State private var rendering = false
+    @State private var deleting = false
+    @State private var viewerPreferences = false
+    @State private var cropGesture: RawAdjustments?
+    @State private var category = "Tone"
+    @State private var texture = "Grain"
     @State private var share: RawShareItem?
     @State private var pendingExport: String?
-    @State private var confirmDelete = false, exportSheet = false, info = false
+    @State private var confirmDelete = false
+    @State private var exportSheet = false
+    @State private var info = false
     @AppStorage("raw-export-format") private var exportFormat = "JPEG"
     @AppStorage("raw-export-size") private var exportSize = 0
     private var shot: RawShot? { library.shots.first { $0.id == selectedID } }
     private var request: RawRenderRequest { RawRenderRequest(id: selectedID, adjustments: adjustments, compare: comparing) }
-    init(library: RawPhotoLibrary, initial: RawShot, onCamera: @escaping () -> Void) {
-        self.library = library; self.onCamera = onCamera
+    init(library: RawPhotoLibrary, camera: RawCapture, initial: RawShot, onCamera: @escaping () -> Void) {
+        self.library = library; self.camera = camera; self.onCamera = onCamera
         _selectedID = State(initialValue: initial.id); _adjustments = State(initialValue: initial.adjustments)
     }
     var body: some View {
@@ -143,11 +156,17 @@ struct RawViewerView: View {
                 Spacer()
                 Menu {
                     Button("写真の情報", systemImage: "info.circle") { info = true }
-                    Button("この現像設定を標準にする") { RawPreferences.recipe = adjustments }
+                    Button("この現像設定を標準にする") {
+                        var recipe = adjustments
+                        recipe.cropAspect = "Original"; recipe.cropZoom = 1; recipe.cropX = 0.5; recipe.cropY = 0.5; recipe.rotation = 0; recipe.flipH = false; recipe.flipV = false
+                        RawPreferences.recipe = recipe
+                    }
+                    Button("撮影に戻る") { persist(); onCamera() }
                     Button("すべての調整をリセット") { change { adjustments = RawAdjustments() } }
                     Button("原本を書き出す") { export("Original") }
                     Button("写真を削除", systemImage: "trash", role: .destructive) { confirmDelete = true }
                 } label: { Image(systemName: "ellipsis.circle").frame(width: 38, height: 38) }
+                Button { viewerPreferences = true } label: { Image(systemName: "gearshape").frame(width: 38, height: 38) }.accessibilityLabel("設定")
             }.font(.system(size: 15)).padding(.horizontal, 8).disabled(library.busy)
             HStack(alignment: .top) {
                 Button { info = true } label: { Image(systemName: "info.circle").frame(width: 30, height: 24) }
@@ -166,7 +185,20 @@ struct RawViewerView: View {
                 if let error { Text(error).font(.callout).multilineTextAlignment(.center).padding() }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
-                .onLongPressGesture(minimumDuration: 0.3, pressing: { comparing = $0 }, perform: {})
+                .onLongPressGesture(minimumDuration: 0.3, pressing: { if !(editing && category == "Crop") { comparing = $0 } }, perform: {})
+                .simultaneousGesture(MagnificationGesture().onChanged { scale in
+                    guard editing && category == "Crop" else { return }
+                    if cropGesture == nil { cropGesture = adjustments }
+                    adjustments.cropZoom = min(4, max(1, (cropGesture?.cropZoom ?? 1) * Double(scale)))
+                }.onEnded { _ in finishCropGesture() })
+                .simultaneousGesture(DragGesture().onChanged { value in
+                    guard editing && category == "Crop" else { return }
+                    if cropGesture == nil { cropGesture = adjustments }
+                    guard let start = cropGesture else { return }
+                    let span = Double(max(1, UIScreen.main.bounds.width))
+                    adjustments.cropX = min(1, max(0, start.cropX - Double(value.translation.width) / span))
+                    adjustments.cropY = min(1, max(0, start.cropY + Double(value.translation.height) / span))
+                }.onEnded { _ in finishCropGesture() })
                 .accessibilityLabel(comparing ? "原本を比較中" : "現像した写真")
             if editing { editorControls }
             if !editing {
@@ -191,7 +223,7 @@ struct RawViewerView: View {
                     tab("Color", icon: "paintpalette", text: "色")
                     tab("Texture", icon: "sparkles", text: "質感")
                     tab("Crop", icon: "crop", text: "クロップ")
-                    Button { persist(); onCamera() } label: { Image(systemName: "camera").frame(maxWidth: .infinity).frame(height: 42) }.accessibilityLabel("撮影に戻る")
+                    Button { exportSheet = true } label: { Image(systemName: "photo.badge.arrow.down").foregroundStyle(.black).frame(width: 42, height: 42).background(rawAccent, in: Circle()).frame(maxWidth: .infinity) }.accessibilityLabel("書き出す")
                 }.padding(.bottom, 8)
             }
         }.background(rawBackground).foregroundStyle(.white).navigationBarBackButtonHidden().toolbar(.hidden, for: .navigationBar)
@@ -200,6 +232,7 @@ struct RawViewerView: View {
             .sheet(item: $share) { item in RawShareSheet(url: item.url).onDisappear { try? FileManager.default.removeItem(at: item.url) } }
             .sheet(isPresented: $exportSheet, onDismiss: { if let kind = pendingExport { pendingExport = nil; export(kind) } }) { exportControls }
             .sheet(isPresented: $info) { metadataView }
+            .sheet(isPresented: $viewerPreferences) { RawPreferencesView(camera: camera) }
             .confirmationDialog("原本と編集を削除しますか？", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("削除", role: .destructive) { deleting = true; if let shot { library.delete(shot) }; dismiss() }
             }
@@ -228,7 +261,7 @@ struct RawViewerView: View {
                 case "Texture":
                     Picker("質感", selection: $texture) { Text("Grain").tag("Grain"); Text("Halation").tag("Halation") }.pickerStyle(.segmented)
                     if texture == "Grain" {
-                        adjust("Amplitude", $adjustments.grain, 0...2)
+                        adjust("Amplitude", $adjustments.grain, 0...5)
                         adjust("Grain Size", $adjustments.grainSize, 0.25...4)
                         Toggle("Force Pixel Size Grain", isOn: Binding(get: { adjustments.forcePixelGrain }, set: { value in change { adjustments.forcePixelGrain = value } })).font(.caption)
                     } else {
@@ -254,7 +287,7 @@ struct RawViewerView: View {
         }.frame(height: category == "Tone" || category == "Crop" ? 240 : 180)
     }
     private func tab(_ name: String, icon: String, text: String) -> some View {
-        Button { category = name } label: { VStack(spacing: 4) { Image(systemName: icon); Text(text).font(.system(size: 9)) }.foregroundStyle(category == name ? .white : .gray).frame(maxWidth: .infinity).frame(height: 42) }.accessibilityIdentifier("raw-tab-\(name)")
+        Button { category = name } label: { VStack(spacing: 4) { Image(systemName: icon); Text(text).font(.system(size: 9)) }.foregroundStyle(category == name ? rawAccent : Color.gray).frame(maxWidth: .infinity).frame(height: 42) }.accessibilityIdentifier("raw-tab-\(name)")
     }
     private func adjust(_ title: String, _ value: Binding<Double>, _ range: ClosedRange<Double>) -> some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -262,10 +295,14 @@ struct RawViewerView: View {
             Slider(value: value, in: range, onEditingChanged: { started in
                 if started { beforeGesture = adjustments }
                 else if let before = beforeGesture, before != adjustments { undo.append(before); if undo.count > 100 { undo.removeFirst() }; redo.removeAll(); beforeGesture = nil }
-            }).tint(.white).accessibilityLabel(title)
+            }).tint(rawAccent).accessibilityLabel(title)
         }
     }
     private func change(_ action: () -> Void) { let before = adjustments; action(); if before != adjustments { undo.append(before); redo.removeAll() } }
+    private func finishCropGesture() {
+        if let before = cropGesture, before != adjustments { undo.append(before); redo.removeAll() }
+        cropGesture = nil
+    }
     private func undoEdit() { guard let value = undo.popLast() else { return }; redo.append(adjustments); adjustments = value }
     private func redoEdit() { guard let value = redo.popLast() else { return }; undo.append(adjustments); adjustments = value }
     private func persist() { if let shot, shot.adjustments != adjustments { library.save(shot, adjustments: adjustments) } }
@@ -302,6 +339,7 @@ struct RawViewerView: View {
                         if let iso = c.iso { LabeledContent("ISO", value: String(format: "%.0f", iso)) }
                         if let seconds = c.seconds { LabeledContent("シャッター", value: seconds < 1 ? String(format: "1/%.0f 秒", 1/seconds) : String(format: "%.2f 秒", seconds)) }
                         if let aperture = c.aperture { LabeledContent("絞り", value: String(format: "f/%.1f", aperture)) }
+                        if let temperature = c.temperature { LabeledContent("色温度", value: String(format: "%.0f K", temperature)) }
                     }
                     if let size = try? library.original(shot).resourceValues(forKeys: [.fileSizeKey]).fileSize { LabeledContent("原本サイズ", value: ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)) }
                 }

@@ -5,7 +5,7 @@ import CoreImage.CIFilterBuiltins
 struct RawAdjustments: Codable, Equatable {
     var exposure = 0.0, warmth = 0.0, tint = 0.0, saturation = 1.0, contrast = 1.0
     var highlights = 0.0, shadows = 0.0, blackPoint = 0.0
-    var grain = 0.12, grainSize = 1.0, halation = 0.35, halationRadius = 1.0
+    var grain = 1.25, grainSize = 1.0, halation = 0.35, halationRadius = 1.0
     var forcePixelGrain = false
     var look = "Cinema", cropAspect = "Original"
     var rotation = 0
@@ -28,7 +28,7 @@ struct RawAdjustments: Codable, Equatable {
         tint = try n(.tint, 0, -100...100); saturation = try n(.saturation, 1, 0...2)
         contrast = try n(.contrast, 1, 0.5...1.5); highlights = try n(.highlights, 0, 0...1)
         shadows = try n(.shadows, 0, -1...1); blackPoint = try n(.blackPoint, 0, -0.1...0.1)
-        grain = try n(.grain, 0.12, 0...2); grainSize = try n(.grainSize, 1, 0.25...4)
+        grain = try n(.grain, 0.12, 0...5); grainSize = try n(.grainSize, 1, 0.25...4)
         halation = try n(.halation, 0.35, 0...2); halationRadius = try n(.halationRadius, 1, 0.25...4)
         forcePixelGrain = try c.decodeIfPresent(Bool.self, forKey: .forcePixelGrain) ?? false
         look = try c.decodeIfPresent(String.self, forKey: .look) ?? "Cinema"
@@ -43,6 +43,7 @@ struct RawAdjustments: Codable, Equatable {
 struct RawCaptureMetadata: Codable, Equatable {
     var width: Int, height: Int
     var iso: Double?, seconds: Double?, aperture: Double?, lens: String?
+    var temperature: Double?
     var megapixels: Double { Double(width) * Double(height) / 1_000_000 }
 }
 struct RawShot: Codable, Identifiable, Equatable {
@@ -128,17 +129,12 @@ enum RawDeveloper {
             image = glow.applyingFilter("CIScreenBlendMode", parameters: [kCIInputBackgroundImageKey: image]).cropped(to: bounds)
         }
         if a.grain > 0 {
-            // A repeatable texture keeps the grain stable while editing and exporting.
-            let tile = CIFilter.affineTile()
-            tile.inputImage = CIImage(cgImage: grainTile)
             let side = max(image.extent.width, image.extent.height)
             let size = a.grainSize * (a.forcePixelGrain ? side / max(1, nativeLongSide) : side / 2400)
-            tile.transform = CGAffineTransform(scaleX: max(0.05, size), y: max(0.05, size))
-            let noise = tile.outputImage!
-                .cropped(to: image.extent)
-                .applyingFilter("CIColorMatrix", parameters: [
-                    "inputAVector": CIVector(x: 0, y: 0, z: 0, w: a.grain * 0.3)])
-            image = noise.applyingFilter("CISoftLightBlendMode", parameters: [kCIInputBackgroundImageKey: image])
+            guard let kernel = grainKernel, let output = kernel.apply(extent: image.extent, arguments: [image, a.grain * 0.022, max(0.1, size)]) else {
+                throw RawCameraError.message("粒子の現像に失敗しました。原本は保持されています。")
+            }
+            image = output
         }
         if a.rotation != 0 { image = image.oriented(forExifOrientation: [1, 6, 3, 8][a.rotation % 4]) }
         if a.flipH { image = image.oriented(forExifOrientation: 2) }
@@ -156,21 +152,19 @@ enum RawDeveloper {
         if let maxSide, side > maxSide { image = image.transformed(by: CGAffineTransform(scaleX: maxSide / side, y: maxSide / side)) }
         return image
     }
-    private static let grainTile: CGImage = {
-        var state: UInt32 = 81273
-        var bytes = [UInt8](repeating: 0, count: 256 * 256 * 4)
-        for p in stride(from: 0, to: bytes.count, by: 4) {
-            state = 1664525 &* state &+ 1013904223
-            let value = UInt8(state >> 24)
-            bytes[p] = value; bytes[p + 1] = value; bytes[p + 2] = value; bytes[p + 3] = 255
+    private static let grainKernel = CIColorKernel(source: """
+        kernel vec4 stableGrain(__sample source, float amount, float cellSize) {
+            vec2 p = floor(destCoord() / cellSize);
+            float a = fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+            float b = fract(sin(dot(p + vec2(13.0, 71.0), vec2(269.5, 183.3))) * 23421.631);
+            float c = fract(sin(dot(p + vec2(53.0, 19.0), vec2(419.2, 371.9))) * 31251.918);
+            vec4 color = unpremultiply(source);
+            float luminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float density = 0.35 + 0.65 * sqrt(clamp(luminance, 0.0, 1.0));
+            color.rgb = clamp(color.rgb + (a+b+c-1.5) * amount * density, 0.0, 1.0);
+            return premultiply(color);
         }
-        let provider = CGDataProvider(data: Data(bytes) as CFData)!
-        let cg = CGImage(width: 256, height: 256, bitsPerComponent: 8, bitsPerPixel: 32,
-                         bytesPerRow: 1024, space: CGColorSpaceCreateDeviceRGB(),
-                         bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                         provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
-        return cg
-    }()
+        """)
     static func jpeg(_ image: CIImage) throws -> Data {
         guard let data = context.jpegRepresentation(of: image, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
                                                      options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.94]) else {

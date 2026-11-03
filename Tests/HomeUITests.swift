@@ -28,6 +28,44 @@ final class HomeUITests: XCTestCase {
     }
 
     @MainActor
+    func testRawEditorWorkflow() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-raw-direct-ui-test", "-raw-fixture-ui-test"]
+        let fixture = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "iPhone6sPlus", withExtension: "dng"))
+        app.launchEnvironment["RAW_CAMERA_TEST_FIXTURE"] = fixture.path
+        app.launch()
+        XCTAssertTrue(app.buttons["raw-gallery"].waitForExistence(timeout: 20))
+        app.buttons["raw-gallery"].tap()
+        let photo = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "raw-shot-")).firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 40))
+        photo.tap()
+        let edit = app.buttons["raw-edit"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 20))
+        capture("raw-viewer")
+        edit.tap()
+        app.buttons["raw-tab-Color"].tap()
+        let saturation = app.sliders["彩度"]
+        XCTAssertTrue(saturation.waitForExistence(timeout: 10))
+        saturation.adjust(toNormalizedSliderPosition: 0.7)
+        XCTAssertTrue(app.buttons["raw-undo"].isEnabled)
+        app.buttons["raw-undo"].tap()
+        XCTAssertTrue(app.buttons["raw-redo"].isEnabled)
+        app.buttons["raw-redo"].tap()
+        app.buttons["raw-tab-Texture"].tap()
+        XCTAssertTrue(app.sliders["Grain Size"].waitForExistence(timeout: 10))
+        capture("raw-texture-controls")
+        app.buttons["raw-tab-Crop"].tap()
+        XCTAssertTrue(app.buttons["右に回転"].waitForExistence(timeout: 10))
+        app.buttons["右に回転"].tap()
+        capture("raw-crop-controls")
+        app.buttons["完了"].tap()
+        app.buttons["書き出す"].tap()
+        XCTAssertTrue(app.buttons["原本を共有"].waitForExistence(timeout: 10))
+        capture("raw-export-controls")
+        app.buttons["閉じる"].tap()
+    }
+
+    @MainActor
     func testRailNavigation() {
         let app = XCUIApplication()
         app.launchArguments = ["-rail-direct-ui-test"]

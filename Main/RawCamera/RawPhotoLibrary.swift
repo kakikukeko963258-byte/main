@@ -39,8 +39,9 @@ final class RawPhotoLibrary: ObservableObject {
     func original(_ shot: RawShot) -> URL { root.appendingPathComponent(shot.stem + "." + shot.fileExtension) }
     func thumbnail(_ shot: RawShot) -> URL { root.appendingPathComponent(shot.stem + ".jpg") }
     private func metadata(_ shot: RawShot) -> URL { root.appendingPathComponent(shot.stem + ".json") }
-    func add(data: Data, format: String, metadata: RawCaptureMetadata? = nil, completion: @escaping () -> Void) {
-        let defaults = RawPreferences.recipe
+    func add(data: Data, format: String, metadata: RawCaptureMetadata? = nil, captured: Bool = true, completion: @escaping () -> Void) {
+        var defaults = RawPreferences.recipe
+        if captured { defaults.cropAspect = UserDefaults.standard.string(forKey: "raw-capture-aspect") ?? "Original" }
         queue.async {
             let ext = format == "HEIC" ? "heic" : format == "JPEG" ? "jpg" : format == "PNG" ? "png" : format == "TIFF" ? "tiff" : "dng"
             var details = metadata
@@ -49,6 +50,8 @@ final class RawPhotoLibrary: ObservableObject {
                 var height = (properties[kCGImagePropertyPixelHeight as String] as? NSNumber)?.intValue ?? 0
                 if ext == "dng", let raw = CIRAWFilter(imageData: data, identifierHint: "com.adobe.raw-image"), raw.nativeSize.width > 0 {
                     width = Int(raw.nativeSize.width); height = Int(raw.nativeSize.height)
+                    if details == nil { details = RawCaptureMetadata(width: width, height: height) }
+                    details?.temperature = Double(raw.neutralTemperature)
                 }
                 if width > 0 && height > 0 {
                     if details == nil { details = RawCaptureMetadata(width: width, height: height) }
@@ -67,7 +70,7 @@ final class RawPhotoLibrary: ObservableObject {
                     DispatchQueue.main.async { self.thumbnailRevision += 1 }
                 } catch { DispatchQueue.main.async { self.error = error.localizedDescription } }
                 DispatchQueue.main.async {
-                    if UserDefaults.standard.bool(forKey: "raw-auto-export") { self.saveToPhotos(shot, raw: false) }
+                    if captured && UserDefaults.standard.bool(forKey: "raw-auto-export") { self.saveToPhotos(shot, raw: false) }
                     completion()
                 }
             } catch { DispatchQueue.main.async { self.error = "RAW保存に失敗しました: \(error.localizedDescription)"; completion() } }
