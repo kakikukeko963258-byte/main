@@ -23,7 +23,9 @@ NSString *RawPerformCapture(AVCapturePhotoOutput *output, AVCapturePhotoSettings
                            id<AVCapturePhotoCaptureDelegate> delegate) {
     @try {
         if (dimensions.width > 0 && dimensions.height > 0) settings.maxPhotoDimensions = dimensions;
-        settings.photoQualityPrioritization = AVCapturePhotoQualityPrioritizationQuality;
+        if (settings.rawPhotoPixelFormatType == 0) {
+            settings.photoQualityPrioritization = AVCapturePhotoQualityPrioritizationQuality;
+        }
         settings.flashMode = flash && [output.supportedFlashModes containsObject:@(AVCaptureFlashModeOn)] ? AVCaptureFlashModeOn : AVCaptureFlashModeOff;
         AVCaptureConnection *connection = [output connectionWithMediaType:AVMediaTypeVideo];
         if ([connection isVideoRotationAngleSupported:90]) connection.videoRotationAngle = 90;
