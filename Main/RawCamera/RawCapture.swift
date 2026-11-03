@@ -134,10 +134,12 @@ final class RawCapture: NSObject, ObservableObject, AVCapturePhotoCaptureDelegat
     func setMode(_ value: String) {
         guard !capturing else { return }
         mode = value; useProRAW = value == "ProRAW"
+        if ready { message = nil }
         UserDefaults.standard.set(value, forKey: "raw-capture-mode"); updateResolutionLabel()
     }
     func setMegapixels(_ value: Int) {
         if value == 48 && zoom != 1 { setZoom(1) }
+        if ready { message = nil }
         requestedMP = value; UserDefaults.standard.set(value, forKey: "raw-megapixels"); updateResolutionLabel()
     }
     private func updateResolutionLabel() {
@@ -213,7 +215,7 @@ final class RawCapture: NSObject, ObservableObject, AVCapturePhotoCaptureDelegat
     }
     func capture() {
         guard ready, !capturing else { return }
-        capturing = true
+        capturing = true; message = nil
         let selectedMode = mode, requested = requestedMP, useFlash = flash
         queue.async {
             guard let device = self.device else { DispatchQueue.main.async { self.capturing = false }; return }

@@ -1,8 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 WDA_REV=d17782422d55ff1e5e0ceb74eb1fd509cc0c35b6
-git clone --filter=blob:none https://github.com/appium/WebDriverAgent.git wda-source
-git -C wda-source checkout "$WDA_REV"
+git init wda-source
+git -C wda-source remote add origin https://github.com/appium/WebDriverAgent.git
+FETCHED=false
+for attempt in 1 2 3; do
+  if git -C wda-source fetch --depth 1 origin "$WDA_REV"; then
+    FETCHED=true
+    break
+  fi
+  sleep 5
+done
+[ "$FETCHED" = true ] || exit 1
+git -C wda-source checkout --detach FETCH_HEAD
 # A real dynamic framework is signed by AltForge's existing framework signer.
 # Put the WDA XCTest entry point in this framework, avoiding a second app or
 # an unsigned .xctest plug-in. The main executable never links this framework.
