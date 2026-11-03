@@ -37,6 +37,16 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSLocalNetworkUsageDescription: Windows PCを検出し、選択した共有フォルダーへ接続します。
         NSCameraUsageDescription: RAW写真の撮影と、PC接続用QRコードの読み取りにカメラを使用します。
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.kakikukeko.main.rawarchive
+            UTTypeDescription: RAW Camera Archive
+            UTTypeConformsTo: [com.apple.package]
+            UTTypeTagSpecification:
+              public.filename-extension: [rawcamera]
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: RAW Camera Archive
+            LSItemContentTypes: [com.kakikukeko.main.rawarchive]
+            CFBundleTypeRole: Editor
         NSPhotoLibraryAddUsageDescription: 撮影したDNG原本や現像した写真を写真ライブラリへ保存します。
         NSLocationWhenInUseUsageDescription: 乗車中の路線・列車種別と停車駅を推定するため、移動と停車・通過を端末内で照合します。
         NSBonjourServices: [_pcfilebridge._tcp]
@@ -110,7 +120,7 @@ targets:
   mainRawTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [TestsRaw, Main/RawCamera/RawPhotoLibrary.swift, Main/RawCamera/RawDeveloper.swift]
+    sources: [TestsRaw, Main/RawCamera/RawPhotoLibrary.swift, Main/RawCamera/RawDeveloper.swift, Main/RawCamera/RawArchive.swift]
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

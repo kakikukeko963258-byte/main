@@ -1,253 +1,203 @@
 import SwiftUI
 import AVFoundation
 
+let rawBackground = Color(red: 0.065, green: 0.065, blue: 0.075)
+
 struct RawCameraView: View {
     let onHome: () -> Void
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var camera = RawCapture()
     @StateObject private var library = RawPhotoLibrary()
-    @State private var gallery = false
-    @State private var preferences = false
-    @AppStorage("raw-grid") private var grid = true
-    @AppStorage("raw-auto-export") private var autoExport = false
-    private let amber = Color(red: 0.95, green: 0.71, blue: 0.34)
+    @State private var gallery = false, preferences = false, exposurePanel = false
+    @State private var countdown = 0
+    @State private var timerTask: Task<Void, Never>?
+    @AppStorage("raw-grid") private var grid = false
+    @AppStorage("raw-timer") private var timer = 0
+    @AppStorage("raw-mirror-front") private var mirrorFront = true
+    private var currentLens: AVCaptureDevice? { camera.lenses.first { $0.uniqueID == camera.selectedLens } }
+    private var visibleLenses: [AVCaptureDevice] { camera.lenses.filter { $0.position == (currentLens?.position ?? .back) } }
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Button(action: onHome) { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
-                    .accessibilityLabel("ホームへ戻る")
+                Button(action: onHome) { Image(systemName: "chevron.left").frame(width: 42, height: 44) }.accessibilityLabel("ホームへ戻る")
                 Spacer()
-                Text("RAW CAMERA").font(.system(size: 13, weight: .semibold, design: .monospaced)).tracking(3)
+                Menu {
+                    if camera.bayerAvailable {
+                        Button("12MP · RAW") { choose("RAW", 12) }
+                        Button("最大48MP · RAW") { choose("RAW", 48) }.disabled(!camera.supports48)
+                    }
+                    if camera.proRAWAvailable {
+                        Button("12MP · ProRAW") { choose("ProRAW", 12) }
+                        Button("48MP · ProRAW") { choose("ProRAW", 48) }.disabled(!camera.supports48)
+                    }
+                    Button("12MP · HEIC") { choose("HEIC", 12) }
+                    Button("48MP · HEIC") { choose("HEIC", 48) }.disabled(!camera.supports48)
+                } label: {
+                    Text("\(camera.resolutionText) \(camera.mode)").font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .padding(.horizontal, 9).padding(.vertical, 5).overlay(Capsule().stroke(.white.opacity(0.35), lineWidth: 0.6))
+                }.disabled(camera.capturing || countdown > 0).accessibilityIdentifier("raw-resolution")
                 Spacer()
-                Button { preferences = true } label: { Image(systemName: "slider.horizontal.3").frame(width: 44, height: 44) }
+                Menu {
+                    ForEach([0, 3, 10], id: \.self) { value in Button(value == 0 ? "タイマーなし" : "\(value)秒") { timer = value } }
+                } label: { Image(systemName: timer == 0 ? "stopwatch" : "timer").frame(width: 38, height: 44) }.accessibilityLabel("セルフタイマー")
+                Button { preferences = true } label: { Image(systemName: "gearshape").frame(width: 38, height: 44) }
                     .accessibilityLabel("カメラ設定").accessibilityIdentifier("raw-settings")
-            }.padding(.horizontal, 12).padding(.bottom, 10)
+            }.padding(.horizontal, 8)
+            Spacer(minLength: 8)
             ZStack {
-                RawCameraPreview(camera: camera)
+                RawCameraPreview(camera: camera).scaleEffect(x: currentLens?.position == .front && !mirrorFront ? -1 : 1, y: 1)
                 if grid && camera.ready {
-                    GeometryReader { proxy in
+                    GeometryReader { p in
                         Path { path in
-                            for fraction in [CGFloat(1.0 / 3), CGFloat(2.0 / 3)] {
-                                let x = proxy.size.width * fraction; let y = proxy.size.height * fraction
-                                path.move(to: CGPoint(x: x, y: 0)); path.addLine(to: CGPoint(x: x, y: proxy.size.height))
-                                path.move(to: CGPoint(x: 0, y: y)); path.addLine(to: CGPoint(x: proxy.size.width, y: y))
+                            for f in [CGFloat(1.0/3), CGFloat(2.0/3)] {
+                                path.move(to: CGPoint(x: p.size.width*f, y: 0)); path.addLine(to: CGPoint(x: p.size.width*f, y: p.size.height))
+                                path.move(to: CGPoint(x: 0, y: p.size.height*f)); path.addLine(to: CGPoint(x: p.size.width, y: p.size.height*f))
                             }
                         }.stroke(.white.opacity(0.3), lineWidth: 0.5)
                     }.allowsHitTesting(false)
                 }
+                if camera.focusLocked { VStack { Text("AE/AF LOCK").font(.caption2).padding(5).background(.black.opacity(0.6)); Spacer() }.foregroundStyle(.yellow).padding() }
+                if countdown > 0 { Text("\(countdown)").font(.system(size: 76, weight: .light)).shadow(radius: 12) }
+                if camera.capturing { ProgressView().padding(20).background(.black.opacity(0.7), in: Circle()) }
                 if let message = camera.message {
-                    VStack(spacing: 16) {
-                        Image(systemName: "camera.aperture").font(.largeTitle).foregroundStyle(amber)
+                    VStack(spacing: 15) {
+                        Image(systemName: "camera.aperture").font(.title)
                         Text(message).font(.callout).multilineTextAlignment(.center).accessibilityIdentifier("raw-camera-status")
                         if AVCaptureDevice.authorizationStatus(for: .video) == .denied {
                             Button("設定を開く") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
                         }
-                    }.padding(28).background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 16)).padding(20)
+                    }.padding(25).background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 12)).padding()
                 }
-                if camera.capturing { ProgressView().tint(amber).padding(20).background(.black.opacity(0.75), in: Circle()) }
-            }.aspectRatio(3.0 / 4, contentMode: .fit).background(Color(white: 0.055)).clipped()
-            Spacer(minLength: 12)
-            HStack(spacing: 14) {
-                ForEach(camera.lenses, id: \.uniqueID) { lens in
-                    Button { camera.select(lens) } label: {
+                if exposurePanel {
+                    VStack { Spacer(); HStack {
+                        Image(systemName: "sun.max")
+                        Slider(value: $camera.exposure, in: camera.exposureRange).tint(.white)
+                            .onChange(of: camera.exposure) { _, value in camera.setExposure(value) }.accessibilityLabel("露出補正")
+                        Text(String(format: "%+.1f", camera.exposure)).monospacedDigit().frame(width: 36)
+                    }.font(.caption).padding().background(.black.opacity(0.65)) }
+                }
+            }.aspectRatio(3.0/4, contentMode: .fit).background(.black).clipped()
+            Spacer(minLength: 8)
+            HStack(spacing: 10) {
+                ForEach(visibleLenses, id: \.uniqueID) { lens in
+                    Button {
+                        camera.select(lens)
+                    } label: {
                         Text(lens.deviceType == .builtInUltraWideCamera ? "0.5×" : lens.deviceType == .builtInTelephotoCamera ? "望遠" : "1×")
-                            .font(.system(size: 14, weight: .medium, design: .monospaced))
-                            .padding(10).background(camera.selectedLens == lens.uniqueID ? amber.opacity(0.23) : Color.white.opacity(0.06), in: Capsule())
-                    }.disabled(camera.capturing)
+                            .font(.system(size: 11, weight: .medium)).frame(width: 42, height: 42)
+                            .background(camera.selectedLens == lens.uniqueID && camera.zoom == 1 ? Color.white : Color.clear, in: Circle())
+                            .foregroundStyle(camera.selectedLens == lens.uniqueID && camera.zoom == 1 ? .black : .white)
+                            .overlay(Circle().stroke(.white.opacity(0.35), lineWidth: 0.5))
+                    }
                 }
-                if camera.proRAWAvailable {
-                    Button(camera.useProRAW ? "ProRAW" : "RAW") { camera.useProRAW.toggle() }
-                        .font(.system(size: 12, weight: .bold, design: .monospaced)).disabled(camera.capturing || !camera.bayerAvailable)
+                if currentLens?.deviceType == .builtInWideAngleCamera {
+                    Button { camera.setZoom(camera.zoom == 2 ? 1 : 2) } label: {
+                        Text("2×").font(.system(size: 11, weight: .medium)).frame(width: 42, height: 42)
+                            .background(camera.zoom == 2 ? Color.white : Color.clear, in: Circle())
+                            .foregroundStyle(camera.zoom == 2 ? .black : .white).overlay(Circle().stroke(.white.opacity(0.35), lineWidth: 0.5))
+                    }.accessibilityLabel("2倍ズーム")
                 }
-            }.foregroundStyle(amber)
-            HStack(spacing: 12) {
-                Image(systemName: "sun.max")
-                Slider(value: $camera.exposure, in: camera.exposureRange).tint(amber)
-                    .onChange(of: camera.exposure) { _, value in camera.setExposure(value) }
-                    .accessibilityLabel("露出補正")
-                Text(String(format: "%+.1f", camera.exposure)).monospacedDigit().frame(width: 42)
-            }.font(.caption).padding(.horizontal, 36).padding(.top, 14).disabled(!camera.ready || camera.capturing)
+                Button { exposurePanel.toggle() } label: { Image(systemName: "plusminus").frame(width: 34, height: 42) }.accessibilityLabel("露出補正を表示")
+            }.disabled(camera.capturing || countdown > 0)
             HStack {
                 Button { gallery = true } label: {
                     Group {
-                        if let shot = library.shots.first, let image = UIImage(contentsOfFile: library.thumbnail(shot).path) {
-                            Image(uiImage: image).resizable().scaledToFill()
-                        } else { Image(systemName: "square.grid.2x2").font(.title2) }
-                    }.frame(width: 52, height: 52).clipped().clipShape(RoundedRectangle(cornerRadius: 10))
+                        if let shot = library.shots.first, let image = UIImage(contentsOfFile: library.thumbnail(shot).path) { Image(uiImage: image).resizable().scaledToFill() }
+                        else { Image(systemName: "square.grid.3x3") }
+                    }.frame(width: 48, height: 48).clipped().clipShape(RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.7), lineWidth: 0.8))
                 }.accessibilityLabel("RAWギャラリー").accessibilityIdentifier("raw-gallery")
                 Spacer()
-                Button { camera.capture() } label: {
-                    Circle().fill(camera.ready ? Color.white : Color.gray).frame(width: 64, height: 64)
-                        .padding(6).overlay(Circle().stroke(amber, lineWidth: 2))
+                Button(action: shutter) {
+                    Circle().fill(camera.ready ? .white : .gray).frame(width: 56, height: 56).padding(6).overlay(Circle().stroke(.white, lineWidth: 2))
+                        .overlay { if countdown > 0 { Image(systemName: "xmark").foregroundStyle(.black) } }
                 }.disabled(!camera.ready || camera.capturing).accessibilityLabel("RAWを撮影").accessibilityIdentifier("raw-shutter")
                 Spacer()
-                Text(camera.useProRAW ? "DNG\nProRAW" : "DNG\nRAW")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced)).lineSpacing(4).foregroundStyle(amber).frame(width: 52)
-            }.padding(.horizontal, 34).padding(.vertical, 20)
-        }
-        .background(.black).foregroundStyle(.white)
-        .onAppear { startCamera() }
-        .onDisappear { camera.stop() }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active && !gallery && !preferences { startCamera() } else { camera.stop() }
-        }
-        .sheet(isPresented: $gallery, onDismiss: { startCamera() }) {
-            RawGalleryView(library: library)
-        }
-        .sheet(isPresented: $preferences, onDismiss: { startCamera() }) {
-            NavigationStack {
-                Form {
-                    Toggle("グリッド", isOn: $grid)
-                    Toggle("撮影後にJPEGを写真へ保存", isOn: $autoExport)
-                    Section {
-                        Text("DNG原本はmain内に保存されます。撮影後、ギャラリーで色と質感を調整できます。RAWとProRAWの対応は機種・レンズによって異なります。")
-                    }
-                }.navigationTitle("カメラ設定").toolbar { ToolbarItem(placement: .confirmationAction) { Button("完了") { preferences = false } } }
-            }.preferredColorScheme(.dark)
-        }
-        .onChange(of: gallery) { _, shown in if shown { camera.stop() } }
-        .onChange(of: preferences) { _, shown in if shown { camera.stop() } }
-        .alert("RAWカメラ", isPresented: Binding(get: { !gallery && (library.error != nil || library.notice != nil) }, set: { if !$0 { library.error = nil; library.notice = nil } })) {
-            Button("OK") { library.error = nil; library.notice = nil }
-        } message: { Text(library.error ?? library.notice ?? "") }
+                Button { camera.switchCamera() } label: { Image(systemName: "arrow.triangle.2.circlepath.camera").frame(width: 48, height: 48) }
+                    .accessibilityLabel("カメラを切り替え").disabled(camera.capturing || countdown > 0)
+            }.padding(.horizontal, 24).padding(.top, 10).padding(.bottom, 16)
+        }.background(rawBackground).foregroundStyle(.white)
+        .onAppear { start() }.onDisappear { stop() }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { start() } else { stop() } }
+        .onChange(of: gallery) { _, showing in if showing { stop() } }
+        .onChange(of: preferences) { _, showing in if showing { stop() } }
+        .sheet(isPresented: $gallery, onDismiss: start) { RawGalleryView(library: library, camera: camera) }
+        .sheet(isPresented: $preferences, onDismiss: start) { RawPreferencesView(camera: camera) }
+        .alert("カメラ", isPresented: Binding(get: { !gallery && (library.error != nil || library.notice != nil || camera.lastCaptureWarning != nil) }, set: { if !$0 { clearNotice() } })) {
+            Button("OK") { clearNotice() }
+        } message: { Text(library.error ?? camera.lastCaptureWarning ?? library.notice ?? "") }
     }
-    private func startCamera() {
+    private func choose(_ mode: String, _ mp: Int) { camera.setMode(mode); camera.setMegapixels(mp) }
+    private func clearNotice() { library.error = nil; library.notice = nil; camera.lastCaptureWarning = nil }
+    private func start() {
         guard scenePhase == .active, !gallery, !preferences else { return }
-        camera.start { data, format, done in library.add(data: data, format: format, completion: done) }
+        camera.start { data, format, metadata, done in library.add(data: data, format: format, metadata: metadata, completion: done) }
+    }
+    private func stop() { timerTask?.cancel(); timerTask = nil; countdown = 0; camera.stop() }
+    private func shutter() {
+        if countdown > 0 { timerTask?.cancel(); countdown = 0; return }
+        guard timer > 0 else { camera.capture(); return }
+        let seconds = timer
+        timerTask = Task { @MainActor in
+            for value in stride(from: seconds, through: 1, by: -1) {
+                countdown = value
+                do { try await Task.sleep(for: .seconds(1)) } catch { countdown = 0; return }
+            }
+            countdown = 0; camera.capture()
+        }
     }
 }
 
-struct RawGalleryView: View {
-    @ObservedObject var library: RawPhotoLibrary
+struct RawPreferencesView: View {
+    @ObservedObject var camera: RawCapture
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("raw-grid") private var grid = false
+    @AppStorage("raw-auto-export") private var auto = false
+    @AppStorage("raw-export-format") private var format = "JPEG"
+    @AppStorage("raw-export-size") private var size = 0
+    @AppStorage("raw-default-lens") private var lens = ""
+    @AppStorage("raw-mirror-front") private var mirror = true
+    @AppStorage("raw-gallery-columns") private var columns = 5
     var body: some View {
         NavigationStack {
-            Group {
-                if library.shots.isEmpty {
-                    ContentUnavailableView("まだ写真がありません", systemImage: "camera.aperture")
-                } else {
-                    ScrollView {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3), spacing: 3) {
-                            ForEach(library.shots) { shot in
-                                NavigationLink {
-                                    RawEditorView(library: library, shot: shot)
-                                } label: { RawThumbnail(url: library.thumbnail(shot), date: shot.date).id("\(shot.id)-\(library.thumbnailRevision)") }
-                            }
-                        }
+            Form {
+                Section("撮影") {
+                    Toggle("グリッド", isOn: $grid)
+                    Toggle("前面カメラを鏡表示", isOn: $mirror)
+                    Toggle("フラッシュ", isOn: $camera.flash)
+                    Picker("初期レンズ", selection: $lens) {
+                        Text("広角").tag("")
+                        ForEach(camera.lenses, id: \.uniqueID) { Text($0.localizedName).tag($0.uniqueID) }
+                    }
+                    if !camera.proRAWAvailable && camera.supports48 {
+                        Text("このカメラの48MP撮影はHEICを使用します。Bayer RAWとは異なる形式です。").font(.footnote).foregroundStyle(.secondary)
                     }
                 }
-            }.navigationTitle("RAWギャラリー").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
-                .overlay { if library.busy { ProgressView().padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
-                .alert("RAWカメラ", isPresented: Binding(get: { library.error != nil || library.notice != nil }, set: { if !$0 { library.error = nil; library.notice = nil } })) {
-                    Button("OK") { library.error = nil; library.notice = nil }
-                } message: { Text(library.error ?? library.notice ?? "") }
+                Section("書き出し") {
+                    Toggle("撮影後に写真へ保存", isOn: $auto)
+                    Picker("形式", selection: $format) { Text("JPEG").tag("JPEG"); Text("HEIC").tag("HEIC") }
+                    RawExportSizePicker(size: $size)
+                }
+                Section("ギャラリー") {
+                    Picker("列数", selection: $columns) { ForEach([3, 4, 5], id: \.self) { Text("\($0)列").tag($0) } }
+                    Button("標準の現像設定に戻す") { RawPreferences.recipe = RawAdjustments() }
+                }
+            }.navigationTitle("設定").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完了") { dismiss() } } }
         }.preferredColorScheme(.dark)
     }
 }
-
-private struct RawThumbnail: View {
-    let url: URL
-    let date: Date
-    @State private var image: UIImage?
+struct RawExportSizePicker: View {
+    @Binding var size: Int
     var body: some View {
-        Color(white: 0.1).aspectRatio(1, contentMode: .fit)
-            .overlay { if let image { GeometryReader { p in Image(uiImage: image).resizable().scaledToFill().frame(width: p.size.width, height: p.size.height).clipped() } }
-                else { Image(systemName: "doc.richtext").foregroundStyle(.secondary) } }
-            .clipped().accessibilityLabel(date.formatted())
-            .task { image = await Task.detached(priority: .utility) { UIImage(contentsOfFile: url.path) }.value }
-    }
-}
-
-struct RawEditorView: View {
-    @ObservedObject var library: RawPhotoLibrary
-    let shot: RawShot
-    @Environment(\.dismiss) private var dismiss
-    @State private var adjustments = RawAdjustments()
-    @State private var image: UIImage?
-    @State private var previewError: String?
-    @State private var rendering = false
-    @State private var share: RawShareItem?
-    @State private var confirmDelete = false
-    @State private var deleting = false
-    private var current: RawShot { var value = shot; value.adjustments = adjustments; return value }
-    var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                Color.black
-                if let image { Image(uiImage: image).resizable().scaledToFit() }
-                if rendering { ProgressView() }
-                if let previewError { Text(previewError).font(.callout).padding().multilineTextAlignment(.center) }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            ScrollView {
-                VStack(spacing: 18) {
-                    Picker("現像", selection: $adjustments.look) {
-                        Text("Cinema").tag("Cinema"); Text("Neutral").tag("Neutral"); Text("Mono").tag("Mono")
-                    }.pickerStyle(.segmented)
-                    adjust("露出", value: $adjustments.exposure, range: -3...3)
-                    adjust("色温度", value: $adjustments.warmth, range: -1...1)
-                    adjust("彩度", value: $adjustments.saturation, range: 0...1.6)
-                    adjust("コントラスト", value: $adjustments.contrast, range: 0.7...1.3)
-                    adjust("粒子", value: $adjustments.grain, range: 0...1)
-                }.padding(20)
-            }.frame(maxHeight: 300).background(Color(white: 0.065))
-        }
-        .navigationTitle(shot.format).navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button("編集を保存", systemImage: "checkmark") { library.save(shot, adjustments: adjustments) }
-                    Button("調整をリセット", systemImage: "arrow.counterclockwise") { adjustments = RawAdjustments() }
-                    Section("書き出す") {
-                        ForEach(["JPEG", "HEIC", "DNG"], id: \.self) { kind in
-                            Button(kind) { library.export(current, kind: kind) { if let url = $0 { share = RawShareItem(url: url) } } }
-                        }
-                        Button("写真にJPEGを保存") { library.saveToPhotos(current, raw: false) }
-                        Button("写真にDNGを保存") { library.saveToPhotos(current, raw: true) }
-                    }
-                    Button("写真を削除", systemImage: "trash", role: .destructive) { confirmDelete = true }
-                } label: { Image(systemName: "ellipsis.circle") }.disabled(library.busy)
-            }
-        }
-        .onAppear { adjustments = shot.adjustments }
-        .task(id: adjustments) {
-            let snapshot = adjustments
-            do { try await Task.sleep(nanoseconds: 180_000_000) } catch { return }
-            rendering = true
-            let result: Result<UIImage, Error> = await withCheckedContinuation { continuation in
-                library.queue.async {
-                    continuation.resume(returning: Result {
-                        let ci = try RawDeveloper.image(library.original(shot), adjustments: snapshot, maxSide: 1600)
-                        guard let cg = RawDeveloper.context.createCGImage(ci, from: ci.extent) else { throw RawCameraError.message("プレビューを作成できません。") }
-                        return UIImage(cgImage: cg)
-                    })
-                }
-            }
-            guard !Task.isCancelled else { return }
-            rendering = false
-            switch result { case .success(let value): image = value; previewError = nil
-            case .failure(let error): previewError = error.localizedDescription }
-        }
-        .onDisappear { if !deleting && adjustments != shot.adjustments { library.save(shot, adjustments: adjustments) } }
-        .sheet(item: $share) { item in RawShareSheet(url: item.url).onDisappear { try? FileManager.default.removeItem(at: item.url) } }
-        .confirmationDialog("DNG原本と編集を削除しますか？", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("削除", role: .destructive) { deleting = true; library.delete(shot); dismiss() }
-        }
-    }
-    private func adjust(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
-        HStack(spacing: 12) {
-            Text(title).font(.caption).frame(width: 80, alignment: .leading)
-            Slider(value: value, in: range).tint(Color(red: 0.95, green: 0.71, blue: 0.34)).accessibilityLabel(title)
-            Text(String(format: "%.2f", value.wrappedValue)).font(.caption.monospacedDigit()).frame(width: 40)
+        Picker("書き出しサイズ", selection: $size) {
+            Text("元のサイズ").tag(0)
+            ForEach([4096, 2048, 1280, 1080], id: \.self) { Text("長辺 \($0) px").tag($0) }
         }
     }
 }
-
-private struct RawShareItem: Identifiable { let id = UUID(); let url: URL }
-private struct RawShareSheet: UIViewControllerRepresentable {
+struct RawShareItem: Identifiable { let id = UUID(); let url: URL }
+struct RawShareSheet: UIViewControllerRepresentable {
     let url: URL
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: [url], applicationActivities: nil)
-    }
+    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: [url], applicationActivities: nil) }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
