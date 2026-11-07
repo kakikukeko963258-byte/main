@@ -2,6 +2,41 @@ import XCTest
 
 final class HomeUITests: XCTestCase {
     @MainActor
+    func testAICodeIntegration() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-reset-home"]
+        app.launch()
+        let folder = app.buttons["ナビゲーション、5個のアプリ"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 20))
+        folder.tap()
+        let aicode = app.buttons["アプリ 7"]
+        XCTAssertTrue(aicode.waitForExistence(timeout: 5))
+        aicode.tap()
+        let counterSample = app.buttons["赤いボタンとカウンター"]
+        XCTAssertTrue(counterSample.waitForExistence(timeout: 15))
+        counterSample.tap()
+        app.tabBars.buttons["コード"].tap()
+        let code = app.staticTexts["aicode-generated-code"]
+        XCTAssertTrue(code.waitForExistence(timeout: 5))
+        XCTAssertTrue(code.label.contains("struct CounterView"))
+        XCTAssertTrue(app.buttons["コピー"].exists)
+        capture("aicode-code-in-main")
+        app.tabBars.buttons["プレビュー"].tap()
+        XCTAssertTrue(app.staticTexts["カウント: 0"].waitForExistence(timeout: 5))
+        app.buttons["＋1"].tap()
+        XCTAssertTrue(app.staticTexts["カウント: 1"].waitForExistence(timeout: 5))
+        app.buttons["リセット"].tap()
+        XCTAssertTrue(app.staticTexts["カウント: 0"].waitForExistence(timeout: 5))
+        capture("aicode-interactive-preview-in-main")
+        app.buttons["ホームへ戻る"].tap()
+        XCTAssertTrue(app.buttons["フォルダを閉じる"].waitForExistence(timeout: 10))
+        app.buttons["アプリ 7"].tap()
+        XCTAssertTrue(app.tabBars.buttons["コード"].waitForExistence(timeout: 10))
+        app.tabBars.buttons["コード"].tap()
+        XCTAssertTrue(app.staticTexts["aicode-generated-code"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testRawCamera() {
         let app = XCUIApplication()
         app.launchArguments = ["-raw-direct-ui-test"]
