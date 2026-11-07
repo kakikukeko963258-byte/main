@@ -162,7 +162,7 @@ private struct SwitcherCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 9) {
                 SlotIcon(slot: slot).frame(width: 28, height: 28)
-                Text(slot == 1 ? "PC File Bridge" : slot == 6 ? "RAWカメラ" : slot == 7 ? "AICode" : "\(slot)")
+                Text(slot == 1 ? "PC File Bridge" : slot == 6 ? "RAWカメラ" : "\(slot)")
                     .font(.system(size: 16, weight: .semibold)).lineLimit(1)
             }.padding(.horizontal, 6).allowsHitTesting(false)
             GeometryReader { geometry in
